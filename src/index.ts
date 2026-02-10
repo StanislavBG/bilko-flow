@@ -6,7 +6,7 @@
 
 import { createApp, createAppContext } from './server';
 
-const PORT = parseInt(process.env.PORT ?? '3000', 10);
+const PORT = parseInt(process.env.PORT ?? '5000', 10);
 
 const context = createAppContext();
 const app = createApp(context);

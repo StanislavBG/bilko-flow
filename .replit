@@ -1,4 +1,4 @@
-modules = ["python-3.11"]
+modules = ["python-3.11", "nodejs-20"]
 [agent]
 expertMode = true
 
@@ -20,7 +20,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python server.py"
+args = "npx ts-node src/index.ts"
 waitForPort = 5000
 
 [workflows.workflow.metadata]

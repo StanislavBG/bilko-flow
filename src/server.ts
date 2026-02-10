@@ -5,6 +5,7 @@
  */
 
 import express from 'express';
+import path from 'path';
 import { Store } from './storage/store';
 import { createMemoryStore } from './storage/memory-store';
 import { DataPlanePublisher } from './data-plane/publisher';
@@ -71,6 +72,12 @@ export function createApp(context?: AppContext): express.Application {
 
   // Error handler
   app.use(errorHandler);
+
+  // Serve static UI — index.html at the project root
+  const staticRoot = path.resolve(__dirname, '..');
+  app.get('/', (_req, res) => {
+    res.sendFile(path.join(staticRoot, 'index.html'));
+  });
 
   return app;
 }
