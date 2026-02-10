@@ -817,7 +817,8 @@ async function apiCall(method, path, body) {
   const opts = { method, headers: apiHeaders() };
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(`${API}${path}`, opts);
-  const data = await res.json();
+  let data;
+  try { data = await res.json(); } catch { data = null; }
   if (!res.ok) throw new Error(data?.error?.message || `API error ${res.status}`);
   return data;
 }
