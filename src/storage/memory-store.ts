@@ -27,6 +27,8 @@ import {
   RoleBindingStore,
   AuditStore,
   EventStore,
+  CredentialStore,
+  CredentialRecord,
   ListOptions,
 } from './store';
 
@@ -354,6 +356,19 @@ class MemoryEventStore implements EventStore {
   }
 }
 
+class MemoryCredentialStore implements CredentialStore {
+  private data = new Map<string, CredentialRecord>();
+
+  async set(identityId: string, record: CredentialRecord): Promise<void> {
+    this.data.set(identityId, { ...record });
+  }
+
+  async get(identityId: string): Promise<CredentialRecord | null> {
+    const record = this.data.get(identityId);
+    return record ? { ...record } : null;
+  }
+}
+
 /** Create a new in-memory store instance. */
 export function createMemoryStore(): Store {
   return {
@@ -368,5 +383,6 @@ export function createMemoryStore(): Store {
     roleBindings: new MemoryRoleBindingStore(),
     audit: new MemoryAuditStore(),
     events: new MemoryEventStore(),
+    credentials: new MemoryCredentialStore(),
   };
 }
