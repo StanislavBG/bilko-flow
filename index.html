@@ -678,6 +678,102 @@
 
     .tab:hover { color: var(--text); }
     .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* Sample flow template cards */
+    .templates-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+      margin-top: 20px;
+    }
+
+    .template-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .template-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    }
+
+    .template-card .template-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 12px;
+      font-size: 18px;
+    }
+
+    .template-card h4 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .template-card p {
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      margin-bottom: 12px;
+    }
+
+    .template-meta {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .template-meta .badge { font-size: 10px; }
+
+    .template-steps-preview {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+
+    .template-steps-preview .step-chip {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 10px;
+      font-family: var(--mono);
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .template-steps-preview .step-arrow {
+      color: var(--border);
+      font-size: 10px;
+    }
+
+    .section-heading {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .section-subheading {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+    }
   </style>
 </head>
 <body>
@@ -816,6 +912,222 @@ const icons = {
   logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
   chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>',
 };
+
+// ---- Sample flow templates ------------------------------------------------
+const SAMPLE_FLOWS = [
+  {
+    id: 'content-curation',
+    icon: '&#x1F4F0;',
+    iconBg: 'rgba(116,185,255,0.15)',
+    title: 'Content Curation Pipeline',
+    description: 'Search the web for articles, filter by relevance, summarize the results, and send a notification with the digest.',
+    grade: 'best-effort',
+    stepTypes: ['http.search', 'transform.filter', 'ai.summarize', 'notification.send'],
+    payload: {
+      name: 'Content Curation Pipeline',
+      description: 'Searches for articles on a topic, filters by relevance score, summarizes the top results using AI, and sends a digest notification.',
+      determinism: { targetGrade: 'best-effort' },
+      entryStepId: 'search',
+      steps: [
+        {
+          id: 'search',
+          name: 'Search Articles',
+          type: 'http.search',
+          dependsOn: [],
+          inputs: { query: 'workflow orchestration', maxResults: 20, sortBy: 'relevance' },
+          policy: { timeoutMs: 30000, maxAttempts: 3, backoffStrategy: 'exponential', backoffBaseMs: 1000 },
+          determinism: { usesExternalApis: true, pureFunction: false }
+        },
+        {
+          id: 'filter',
+          name: 'Filter by Relevance',
+          type: 'transform.filter',
+          dependsOn: ['search'],
+          inputs: { condition: 'item.score >= 0.7', field: 'relevanceScore' },
+          policy: { timeoutMs: 5000, maxAttempts: 1 },
+          determinism: { pureFunction: true }
+        },
+        {
+          id: 'summarize',
+          name: 'AI Summarize',
+          type: 'ai.summarize',
+          dependsOn: ['filter'],
+          inputs: { model: 'claude-sonnet-4-5-20250929', maxTokens: 1024, prompt: 'Summarize these articles into a brief digest' },
+          policy: { timeoutMs: 60000, maxAttempts: 2, backoffStrategy: 'exponential', backoffBaseMs: 2000 },
+          determinism: { usesExternalApis: true, pureFunction: false }
+        },
+        {
+          id: 'notify',
+          name: 'Send Digest',
+          type: 'notification.send',
+          dependsOn: ['summarize'],
+          inputs: { channel: 'email', recipient: 'team@example.com', subject: 'Daily Content Digest' },
+          policy: { timeoutMs: 15000, maxAttempts: 3, backoffStrategy: 'exponential', backoffBaseMs: 1000 },
+          determinism: { usesExternalApis: true, pureFunction: false }
+        }
+      ]
+    }
+  },
+  {
+    id: 'data-transform',
+    icon: '&#x2699;&#xFE0F;',
+    iconBg: 'rgba(0,184,148,0.15)',
+    title: 'Data Transform Pipeline',
+    description: 'A pure deterministic pipeline that maps, filters, and reduces a dataset. Fully replayable with identical outputs.',
+    grade: 'pure',
+    stepTypes: ['transform.map', 'transform.filter', 'transform.reduce'],
+    payload: {
+      name: 'Data Transform Pipeline',
+      description: 'A pure deterministic pipeline: maps raw records to a normalized schema, filters out invalid entries, then reduces to aggregate statistics.',
+      determinism: { targetGrade: 'pure' },
+      entryStepId: 'normalize',
+      steps: [
+        {
+          id: 'normalize',
+          name: 'Normalize Records',
+          type: 'transform.map',
+          dependsOn: [],
+          inputs: { expression: '{ id: item.id, value: parseFloat(item.amount), category: item.type.toLowerCase() }' },
+          policy: { timeoutMs: 10000, maxAttempts: 1 },
+          determinism: { pureFunction: true }
+        },
+        {
+          id: 'validate',
+          name: 'Filter Invalid',
+          type: 'transform.filter',
+          dependsOn: ['normalize'],
+          inputs: { condition: 'item.value > 0 && item.category !== "unknown"' },
+          policy: { timeoutMs: 5000, maxAttempts: 1 },
+          determinism: { pureFunction: true }
+        },
+        {
+          id: 'aggregate',
+          name: 'Aggregate Stats',
+          type: 'transform.reduce',
+          dependsOn: ['validate'],
+          inputs: { initialValue: { total: 0, count: 0 }, expression: '{ total: acc.total + item.value, count: acc.count + 1 }' },
+          policy: { timeoutMs: 10000, maxAttempts: 1 },
+          determinism: { pureFunction: true }
+        }
+      ]
+    }
+  },
+  {
+    id: 'ai-social',
+    icon: '&#x1F916;',
+    iconBg: 'rgba(108,92,231,0.15)',
+    title: 'AI Social Media Post',
+    description: 'Generate text content with AI, create an image, then publish to social media. Showcases parallel AI generation.',
+    grade: 'best-effort',
+    stepTypes: ['ai.generate-text', 'ai.generate-image', 'social.post'],
+    payload: {
+      name: 'AI Social Media Post',
+      description: 'Uses AI to generate a caption and an image in parallel, then publishes both as a social media post.',
+      determinism: { targetGrade: 'best-effort' },
+      entryStepId: 'generate-text',
+      steps: [
+        {
+          id: 'generate-text',
+          name: 'Generate Caption',
+          type: 'ai.generate-text',
+          dependsOn: [],
+          inputs: { model: 'claude-sonnet-4-5-20250929', prompt: 'Write a short, engaging social media caption about workflow automation', maxTokens: 256 },
+          policy: { timeoutMs: 30000, maxAttempts: 2, backoffStrategy: 'exponential', backoffBaseMs: 1000 },
+          determinism: { usesExternalApis: true, pureFunction: false }
+        },
+        {
+          id: 'generate-image',
+          name: 'Generate Image',
+          type: 'ai.generate-image',
+          dependsOn: [],
+          inputs: { model: 'dall-e-3', prompt: 'Abstract geometric art representing automated workflows, purple and blue tones', size: '1024x1024' },
+          policy: { timeoutMs: 60000, maxAttempts: 2, backoffStrategy: 'exponential', backoffBaseMs: 2000 },
+          determinism: { usesExternalApis: true, pureFunction: false }
+        },
+        {
+          id: 'publish',
+          name: 'Publish Post',
+          type: 'social.post',
+          dependsOn: ['generate-text', 'generate-image'],
+          inputs: { platform: 'twitter', includeImage: true },
+          policy: { timeoutMs: 15000, maxAttempts: 3, backoffStrategy: 'exponential', backoffBaseMs: 1000 },
+          determinism: { usesExternalApis: true, pureFunction: false }
+        }
+      ]
+    }
+  },
+  {
+    id: 'api-etl',
+    icon: '&#x1F504;',
+    iconBg: 'rgba(253,203,110,0.15)',
+    title: 'API ETL with Retry',
+    description: 'Extract data from an API, transform it, then load results via HTTP POST. Demonstrates retry policies and replayable determinism.',
+    grade: 'replayable',
+    stepTypes: ['http.request', 'transform.map', 'transform.reduce', 'http.request'],
+    payload: {
+      name: 'API ETL with Retry',
+      description: 'Extracts order data from a REST API, transforms each record to extract key metrics, aggregates into a summary, and POSTs results to a reporting endpoint.',
+      determinism: {
+        targetGrade: 'replayable',
+        externalDependencies: [
+          { name: 'orders-api', kind: 'http-api', deterministic: false, evidenceCapture: 'full-response', nondeterminismDescription: 'Order data changes over time' },
+          { name: 'reports-api', kind: 'http-api', deterministic: true, evidenceCapture: 'response-hash' }
+        ]
+      },
+      entryStepId: 'extract',
+      steps: [
+        {
+          id: 'extract',
+          name: 'Extract Orders',
+          type: 'http.request',
+          dependsOn: [],
+          inputs: { url: 'https://api.example.com/orders?status=completed&limit=100', method: 'GET', headers: { 'Accept': 'application/json' } },
+          policy: { timeoutMs: 30000, maxAttempts: 3, backoffStrategy: 'exponential', backoffBaseMs: 2000 },
+          determinism: {
+            usesExternalApis: true,
+            pureFunction: false,
+            externalDependencies: [
+              { name: 'orders-api', kind: 'http-api', deterministic: false, evidenceCapture: 'full-response', nondeterminismDescription: 'Order data changes over time' }
+            ]
+          }
+        },
+        {
+          id: 'transform',
+          name: 'Extract Metrics',
+          type: 'transform.map',
+          dependsOn: ['extract'],
+          inputs: { expression: '{ orderId: item.id, revenue: item.total, region: item.shipping.country }' },
+          policy: { timeoutMs: 10000, maxAttempts: 1 },
+          determinism: { pureFunction: true }
+        },
+        {
+          id: 'reduce',
+          name: 'Summarize by Region',
+          type: 'transform.reduce',
+          dependsOn: ['transform'],
+          inputs: { initialValue: {}, expression: '{ ...acc, [item.region]: (acc[item.region] || 0) + item.revenue }' },
+          policy: { timeoutMs: 10000, maxAttempts: 1 },
+          determinism: { pureFunction: true }
+        },
+        {
+          id: 'load',
+          name: 'Post Report',
+          type: 'http.request',
+          dependsOn: ['reduce'],
+          inputs: { url: 'https://api.example.com/reports', method: 'POST', headers: { 'Content-Type': 'application/json' } },
+          policy: { timeoutMs: 15000, maxAttempts: 3, backoffStrategy: 'exponential', backoffBaseMs: 1000 },
+          determinism: {
+            usesExternalApis: true,
+            pureFunction: false,
+            externalDependencies: [
+              { name: 'reports-api', kind: 'http-api', deterministic: true, evidenceCapture: 'response-hash' }
+            ]
+          }
+        }
+      ]
+    }
+  }
+];
 
 // ---- Rendering ------------------------------------------------------------
 function render() {
@@ -1026,6 +1338,32 @@ function renderDashboard() {
           <p>Create a workflow and start a run to see activity here.</p>
         </div>
       `}
+    </div>
+    ${!state.workflows.length ? renderSampleTemplates() : ''}`;
+}
+
+// ---- Sample template rendering --------------------------------------------
+function renderSampleTemplates() {
+  return `
+    <div style="margin-top:24px">
+      <div class="section-heading">Sample Flows</div>
+      <div class="section-subheading">Get started quickly with a pre-built workflow template. Click to create.</div>
+      <div class="templates-grid">
+        ${SAMPLE_FLOWS.map(t => `
+          <div class="template-card" data-template-id="${t.id}">
+            <div class="template-icon" style="background:${t.iconBg}">${t.icon}</div>
+            <h4>${t.title}</h4>
+            <p>${t.description}</p>
+            <div class="template-meta">
+              ${gradeBadge(t.grade)}
+              <span class="badge badge-draft"><span class="badge-dot"></span>${t.payload.steps.length} steps</span>
+            </div>
+            <div class="template-steps-preview">
+              ${t.payload.steps.map((s, i) => `${i > 0 ? '<span class="step-arrow">&rarr;</span>' : ''}<span class="step-chip">${s.type}</span>`).join('')}
+            </div>
+          </div>
+        `).join('')}
+      </div>
     </div>`;
 }
 
@@ -1036,9 +1374,10 @@ function renderWorkflowList() {
       <div class="empty-state">
         ${icons.empty}
         <h3>No workflows</h3>
-        <p>Create your first workflow to define an automated flow.</p>
+        <p>Create your first workflow from scratch or pick a sample template below.</p>
         <button class="btn btn-primary" id="create-workflow-btn-empty">${icons.plus} New Workflow</button>
-      </div>`;
+      </div>
+      ${renderSampleTemplates()}`;
   }
   return `
     <div class="table-wrap">
@@ -1405,6 +1744,11 @@ function bindApp() {
   document.getElementById('create-workflow-btn')?.addEventListener('click', showCreateWorkflowModal);
   document.getElementById('create-workflow-btn-empty')?.addEventListener('click', showCreateWorkflowModal);
 
+  // Sample template cards
+  document.querySelectorAll('.template-card').forEach(el => {
+    el.addEventListener('click', () => createFromTemplate(el.dataset.templateId));
+  });
+
   // Workflow links
   document.querySelectorAll('.wf-link').forEach(el => {
     el.addEventListener('click', () => {
@@ -1485,6 +1829,39 @@ function bindApp() {
       if (body) body.classList.toggle('open');
     });
   });
+}
+
+// ---- Create from sample template ------------------------------------------
+async function createFromTemplate(templateId) {
+  const template = SAMPLE_FLOWS.find(t => t.id === templateId);
+  if (!template) return;
+
+  const card = document.querySelector(`[data-template-id="${templateId}"]`);
+  if (card) {
+    card.style.opacity = '0.6';
+    card.style.pointerEvents = 'none';
+  }
+
+  try {
+    const payload = JSON.parse(JSON.stringify(template.payload));
+    payload.accountId = state.account.id;
+    payload.projectId = state.project.id;
+    payload.environmentId = state.environments[0].id;
+
+    const data = await apiCall('POST', '/api/workflows', payload);
+    trackWorkflow(data.workflow.id);
+    state.workflows.push(data.workflow);
+    toast(`Created: ${data.workflow.name}`);
+    state.selectedWorkflow = data.workflow;
+    state.view = 'workflows';
+    render();
+  } catch (err) {
+    toast(err.message, 'error');
+    if (card) {
+      card.style.opacity = '1';
+      card.style.pointerEvents = 'auto';
+    }
+  }
 }
 
 // ---- Create workflow modal ------------------------------------------------
