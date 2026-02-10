@@ -1142,53 +1142,59 @@ function render() {
   }
 }
 
-// ---- Setup screen ---------------------------------------------------------
+// ---- Setup / Login screen -------------------------------------------------
 function renderSetup() {
   return `
     <div class="setup-screen">
       <div class="setup-card">
         <h2>Bilko Flow</h2>
-        <p>Deterministic workflow orchestration. Enter a name to create your account and start building flows.</p>
+        <p>Deterministic workflow orchestration. Sign in to start building and running flows.</p>
         <div class="form-group">
-          <label>Account Name</label>
-          <input type="text" id="setup-name" placeholder="My Organization" autofocus />
+          <label>Identity ID</label>
+          <input type="text" id="setup-identity" value="BilkoBibitkov" />
         </div>
-        <button class="btn btn-primary" id="setup-btn" style="width:100%;justify-content:center;margin-top:8px;">Get Started</button>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="setup-password" placeholder="Enter password" />
+        </div>
+        <button class="btn btn-primary" id="setup-btn" style="width:100%;justify-content:center;margin-top:8px;">Sign In</button>
       </div>
     </div>`;
 }
 
 function bindSetup() {
   const btn = document.getElementById('setup-btn');
-  const nameInput = document.getElementById('setup-name');
-  if (!btn || !nameInput) return;
+  const identityInput = document.getElementById('setup-identity');
+  const passwordInput = document.getElementById('setup-password');
+  if (!btn || !identityInput || !passwordInput) return;
 
-  // Allow pressing Enter to submit
-  nameInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') btn.click();
+  // Allow pressing Enter to submit from either field
+  [identityInput, passwordInput].forEach(input => {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') btn.click();
+    });
   });
 
   btn.addEventListener('click', async () => {
-    const name = nameInput.value.trim();
-    if (!name) { toast('Enter an account name', 'error'); return; }
+    const identityId = identityInput.value.trim();
+    const password = passwordInput.value;
+    if (!identityId) { toast('Enter your identity ID', 'error'); return; }
+    if (!password) { toast('Enter your password', 'error'); return; }
 
-    // Auto-generate an identity for this session
-    const identity = 'admin-' + crypto.randomUUID().slice(0, 8);
-
-    btn.innerHTML = '<span class="spinner"></span> Creating...';
+    btn.innerHTML = '<span class="spinner"></span> Signing in...';
     btn.disabled = true;
     try {
-      state.identity = identity;
-      const data = await apiCall('POST', '/api/accounts', { name, adminIdentityId: identity });
+      const data = await apiCall('POST', '/api/auth/login', { identityId, password });
+      state.identity = data.identity;
       state.account = data.account;
       state.project = data.project;
       state.environments = data.environments;
       saveSession();
-      toast('Account created');
+      toast('Signed in');
       render();
     } catch (err) {
       toast(err.message, 'error');
-      btn.innerHTML = 'Get Started';
+      btn.innerHTML = 'Sign In';
       btn.disabled = false;
     }
   });

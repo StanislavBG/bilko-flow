@@ -103,6 +103,18 @@ export interface EventStore {
   listByScope(scope: TenantScope, options?: ListOptions & { eventTypes?: string[] }): Promise<DataPlaneEvent[]>;
 }
 
+/** Stored credential record. */
+export interface CredentialRecord {
+  passwordHash: string;
+  accountId: string;
+}
+
+/** Store interface for credentials (identity → password hash + account). */
+export interface CredentialStore {
+  set(identityId: string, record: CredentialRecord): Promise<void>;
+  get(identityId: string): Promise<CredentialRecord | null>;
+}
+
 /** Composite store interface. */
 export interface Store {
   accounts: AccountStore;
@@ -116,4 +128,5 @@ export interface Store {
   roleBindings: RoleBindingStore;
   audit: AuditStore;
   events: EventStore;
+  credentials: CredentialStore;
 }

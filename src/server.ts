@@ -14,11 +14,15 @@ import { AuditService } from './audit/audit-service';
 import { WebhookService } from './notifications/webhook';
 import { authMiddleware, errorHandler } from './api/middleware';
 import { createAccountRoutes } from './api/accounts';
+import { createAuthRoutes, hashPassword } from './api/auth';
 import { createWorkflowRoutes } from './api/workflows';
 import { createRunRoutes } from './api/runs';
 import { createArtifactRoutes } from './api/artifacts';
 import { createAttestationRoutes } from './api/attestations';
 import { createEventRoutes } from './api/events';
+import { v4 as uuid } from 'uuid';
+import { AccountStatus, EnvironmentType } from './domain/account';
+import { Role, RbacScopeLevel } from './domain/rbac';
 
 /** Application context containing all services. */
 export interface AppContext {
@@ -59,6 +63,9 @@ export function createApp(context?: AppContext): express.Application {
     res.json({ status: 'ok', version: '0.1.0', specVersion: '1.0.0' });
   });
 
+  // Auth routes (unauthenticated — login must work without a session)
+  app.use('/api/auth', createAuthRoutes(ctx.store));
+
   // Authentication middleware for all API routes
   app.use('/api', authMiddleware(ctx.store));
 
@@ -80,4 +87,61 @@ export function createApp(context?: AppContext): express.Application {
   });
 
   return app;
+}
+
+/**
+ * Seed the default account and credentials so the app is ready to log in.
+ * Default identity: BilkoBibitkov / password: VibeCode101
+ */
+export async function seedDefaultUser(ctx: AppContext): Promise<void> {
+  const now = new Date().toISOString();
+  const store = ctx.store;
+
+  const account = {
+    id: `acct_${uuid()}`,
+    name: 'Bilko',
+    createdAt: now,
+    updatedAt: now,
+    status: AccountStatus.Active,
+  };
+  await store.accounts.create(account);
+
+  const project = {
+    id: `proj_${uuid()}`,
+    accountId: account.id,
+    name: 'Default Project',
+    description: 'Default project created during account setup',
+    createdAt: now,
+    updatedAt: now,
+  };
+  await store.projects.create(project);
+
+  for (const envType of [EnvironmentType.Development, EnvironmentType.Staging, EnvironmentType.Production]) {
+    await store.environments.create({
+      id: `env_${uuid()}`,
+      accountId: account.id,
+      projectId: project.id,
+      name: envType,
+      type: envType,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  await store.roleBindings.create({
+    id: `rb_${uuid()}`,
+    identityId: 'BilkoBibitkov',
+    identityType: 'user',
+    role: Role.Admin,
+    scopeLevel: RbacScopeLevel.Organization,
+    accountId: account.id,
+    createdAt: now,
+  });
+
+  await store.credentials.set('BilkoBibitkov', {
+    passwordHash: hashPassword('VibeCode101'),
+    accountId: account.id,
+  });
+
+  console.log('Default user seeded: BilkoBibitkov (account: Bilko)');
 }

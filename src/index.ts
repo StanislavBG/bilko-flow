@@ -4,17 +4,19 @@
  * Entry point for the application.
  */
 
-import { createApp, createAppContext } from './server';
+import { createApp, createAppContext, seedDefaultUser } from './server';
 
 const PORT = parseInt(process.env.PORT ?? '5000', 10);
 
 const context = createAppContext();
 const app = createApp(context);
 
-app.listen(PORT, () => {
-  console.log(`Bilko Flow server running on port ${PORT}`);
-  console.log(`DSL spec version: 1.0.0`);
-  console.log(`Health check: http://localhost:${PORT}/health`);
+seedDefaultUser(context).then(() => {
+  app.listen(PORT, () => {
+    console.log(`Bilko Flow server running on port ${PORT}`);
+    console.log(`DSL spec version: 1.0.0`);
+    console.log(`Health check: http://localhost:${PORT}/health`);
+  });
 });
 
 // Public exports for programmatic use
