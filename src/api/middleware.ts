@@ -24,6 +24,12 @@ export interface AuthenticatedRequest extends Request {
  */
 export function authMiddleware(store: Store) {
   return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    // Account creation is a bootstrapping endpoint — no account exists yet.
+    if (req.method === 'POST' && req.path === '/accounts') {
+      next();
+      return;
+    }
+
     const identityId = req.headers['x-identity-id'] as string;
     const identityType = (req.headers['x-identity-type'] as string) || 'user';
     const accountId = req.headers['x-account-id'] as string || req.params.accountId || (req.body as any)?.accountId;

@@ -89,8 +89,13 @@ describe('Account API', () => {
     expect(res.status).toBe(400);
   });
 
-  test('unauthenticated request is rejected', async () => {
+  test('POST /api/accounts without auth skips auth (bootstrapping) but still validates body', async () => {
     const res = await request(app, 'POST', '/api/accounts', { name: 'Test' });
+    expect(res.status).toBe(400);
+  });
+
+  test('unauthenticated request to non-bootstrap endpoint is rejected', async () => {
+    const res = await request(app, 'GET', '/api/accounts/acct_fake');
     expect(res.status).toBe(401);
   });
 });
