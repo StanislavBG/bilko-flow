@@ -1148,33 +1148,36 @@ function renderSetup() {
     <div class="setup-screen">
       <div class="setup-card">
         <h2>Bilko Flow</h2>
-        <p>Deterministic workflow orchestration. Create an account to get started with building and running flows.</p>
+        <p>Deterministic workflow orchestration. Enter a name to create your account and start building flows.</p>
         <div class="form-group">
           <label>Account Name</label>
-          <input type="text" id="setup-name" placeholder="My Organization" />
+          <input type="text" id="setup-name" placeholder="My Organization" autofocus />
         </div>
-        <div class="form-group">
-          <label>Admin Identity ID</label>
-          <input type="text" id="setup-identity" placeholder="user-1" />
-          <div class="form-hint">An identity ID for auth headers. Any string works for this reference implementation.</div>
-        </div>
-        <button class="btn btn-primary" id="setup-btn" style="width:100%;justify-content:center;margin-top:8px;">Create Account</button>
+        <button class="btn btn-primary" id="setup-btn" style="width:100%;justify-content:center;margin-top:8px;">Get Started</button>
       </div>
     </div>`;
 }
 
 function bindSetup() {
   const btn = document.getElementById('setup-btn');
-  if (!btn) return;
+  const nameInput = document.getElementById('setup-name');
+  if (!btn || !nameInput) return;
+
+  // Allow pressing Enter to submit
+  nameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') btn.click();
+  });
+
   btn.addEventListener('click', async () => {
-    const name = document.getElementById('setup-name').value.trim();
-    const identity = document.getElementById('setup-identity').value.trim();
-    if (!name || !identity) { toast('Fill in both fields', 'error'); return; }
+    const name = nameInput.value.trim();
+    if (!name) { toast('Enter an account name', 'error'); return; }
+
+    // Auto-generate an identity for this session
+    const identity = 'admin-' + crypto.randomUUID().slice(0, 8);
 
     btn.innerHTML = '<span class="spinner"></span> Creating...';
     btn.disabled = true;
     try {
-      // Set identity before making the call
       state.identity = identity;
       const data = await apiCall('POST', '/api/accounts', { name, adminIdentityId: identity });
       state.account = data.account;
@@ -1185,7 +1188,7 @@ function bindSetup() {
       render();
     } catch (err) {
       toast(err.message, 'error');
-      btn.innerHTML = 'Create Account';
+      btn.innerHTML = 'Get Started';
       btn.disabled = false;
     }
   });
