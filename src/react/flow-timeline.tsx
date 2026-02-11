@@ -1,27 +1,37 @@
 /**
- * FlowTimeline — Vertical step list sidebar.
+ * FlowTimeline — Thin adapter wrapping FlowProgress mode="compact".
  *
- * Shows all steps in execution order with status indicators,
- * supporting step selection for detail inspection.
+ * Translates FlowDefinition + StepExecution data into FlowProgressStep[]
+ * and delegates all rendering to FlowProgress, gaining sliding window
+ * and adaptive labeling for free.
  */
 
-import React from 'react';
-import type { FlowTimelineProps, StepStatus } from './types';
-import { StepNode } from './step-node';
+import React, { useMemo } from 'react';
+import type { FlowTimelineProps, FlowProgressStep } from './types';
+import { FlowProgress } from './flow-progress';
 
-/** Resolve step status from execution data */
-function resolveStatus(
+/** Map StepExecution status to FlowProgressStep status */
+function toProgressStatus(
   stepId: string,
   executions?: Record<string, import('./types').StepExecution>,
-): StepStatus {
-  if (!executions) return 'idle';
+): FlowProgressStep['status'] {
+  if (!executions) return 'pending';
   const exec = executions[stepId];
-  if (!exec) return 'idle';
-  return exec.status;
+  if (!exec) return 'pending';
+  switch (exec.status) {
+    case 'success':
+      return 'complete';
+    case 'running':
+      return 'active';
+    case 'error':
+      return 'error';
+    default:
+      return 'pending';
+  }
 }
 
 /**
- * FlowTimeline — Vertical sidebar showing all steps in execution order.
+ * FlowTimeline — Sidebar that delegates to FlowProgress compact mode.
  *
  * @example
  * ```tsx
@@ -40,23 +50,28 @@ export function FlowTimeline({
   executions,
   className,
 }: FlowTimelineProps) {
+  const progressSteps: FlowProgressStep[] = useMemo(
+    () =>
+      flow.steps.map(step => ({
+        id: step.id,
+        label: step.name,
+        status: toProgressStatus(step.id, executions),
+      })),
+    [flow.steps, executions],
+  );
+
   return (
-    <div className={`flex flex-col gap-1 ${className ?? ''}`}>
+    <div className={`flex flex-col gap-2 ${className ?? ''}`}>
       <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wider px-3 py-2">
         Steps ({flow.steps.length})
       </h3>
-      <div className="flex flex-col gap-1 px-1">
-        {flow.steps.map((step, index) => (
-          <StepNode
-            key={step.id}
-            step={step}
-            status={resolveStatus(step.id, executions)}
-            isSelected={selectedStepId === step.id}
-            onClick={() => onSelectStep(step.id)}
-            index={index}
-            isLast={index === flow.steps.length - 1}
-          />
-        ))}
+      <div className="px-2">
+        <FlowProgress
+          mode="compact"
+          steps={progressSteps}
+          label={flow.name}
+          onStepClick={onSelectStep}
+        />
       </div>
     </div>
   );

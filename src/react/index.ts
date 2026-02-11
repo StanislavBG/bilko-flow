@@ -31,7 +31,7 @@ export type {
   FlowOutput,
   FlowDefinition,
   StepExecution,
-  FlowProgressPhase,
+  FlowProgressStep,
   FlowProgressProps,
   FlowCanvasProps,
   StepDetailProps,

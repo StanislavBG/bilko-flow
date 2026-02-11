@@ -87,8 +87,8 @@ export interface StepExecution {
   };
 }
 
-/** FlowProgress phase descriptor */
-export interface FlowProgressPhase {
+/** FlowProgress step descriptor */
+export interface FlowProgressStep {
   id: string;
   label: string;
   status: 'pending' | 'active' | 'complete' | 'error';
@@ -98,8 +98,8 @@ export interface FlowProgressPhase {
 export interface FlowProgressProps {
   /** Visual mode — "full" for footer/banner, "compact" for inline */
   mode: 'full' | 'compact';
-  /** The phases to display, in order */
-  phases: FlowProgressPhase[];
+  /** Steps to display, in order */
+  steps: FlowProgressStep[];
   /** Flow name/label (shown in "full" mode header) */
   label?: string;
   /** Overall flow status */
@@ -110,6 +110,8 @@ export interface FlowProgressProps {
   lastResult?: string;
   /** Called when user clicks reset/restart */
   onReset?: () => void;
+  /** Called when user clicks a step (from ellipsis dropdown or direct) */
+  onStepClick?: (stepId: string) => void;
   /** Additional CSS classes on root element */
   className?: string;
 }
