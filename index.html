@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bilko Flow</title>
+  <title>Bilko Flow — Library Explorer</title>
   <style>
     :root {
       --bg: #0f1117;
@@ -797,9 +797,7 @@ const state = {
   environments: [],
   identity: null,
   workflows: [],
-  runs: [],
   selectedWorkflow: null,
-  selectedRun: null,
   loading: false,
 };
 
@@ -832,73 +830,20 @@ function toast(msg, type = 'success') {
   setTimeout(() => el.remove(), 4000);
 }
 
-// ---- Persistence ----------------------------------------------------------
-function saveSession() {
-  const s = {
-    account: state.account,
-    project: state.project,
-    environments: state.environments,
-    identity: state.identity,
-  };
-  localStorage.setItem('bilko_session', JSON.stringify(s));
-}
-
-function loadSession() {
+// ---- Session initialization -----------------------------------------------
+async function initSession() {
   try {
-    const s = JSON.parse(localStorage.getItem('bilko_session'));
-    if (s && s.account) {
-      state.account = s.account;
-      state.project = s.project;
-      state.environments = s.environments || [];
-      state.identity = s.identity;
+    const res = await fetch(`${API}/api/session`);
+    const data = await res.json();
+    if (data && data.account) {
+      state.account = data.account;
+      state.project = data.project;
+      state.environments = data.environments || [];
+      state.identity = data.identity;
       return true;
     }
   } catch {}
   return false;
-}
-
-// ---- Data loading ---------------------------------------------------------
-async function loadWorkflows() {
-  try {
-    // The API doesn't have a list-all endpoint in the routes, so we track locally
-    const saved = JSON.parse(localStorage.getItem('bilko_workflows') || '[]');
-    const workflows = [];
-    for (const id of saved) {
-      try {
-        const data = await apiCall('GET', `/api/workflows/${id}`);
-        if (data.workflow) workflows.push(data.workflow);
-      } catch {}
-    }
-    state.workflows = workflows;
-  } catch {
-    state.workflows = [];
-  }
-}
-
-async function loadRuns() {
-  try {
-    const saved = JSON.parse(localStorage.getItem('bilko_runs') || '[]');
-    const runs = [];
-    for (const id of saved) {
-      try {
-        const data = await apiCall('GET', `/api/runs/${id}`);
-        if (data.run) runs.push(data.run);
-      } catch {}
-    }
-    state.runs = runs;
-  } catch {
-    state.runs = [];
-  }
-}
-
-function trackWorkflow(id) {
-  const saved = JSON.parse(localStorage.getItem('bilko_workflows') || '[]');
-  if (!saved.includes(id)) { saved.push(id); localStorage.setItem('bilko_workflows', JSON.stringify(saved)); }
-}
-
-function trackRun(id) {
-  const saved = JSON.parse(localStorage.getItem('bilko_runs') || '[]');
-  if (!saved.includes(id)) { saved.push(id); localStorage.setItem('bilko_runs', JSON.stringify(saved)); }
 }
 
 // ---- SVG icons (minimal inline) -------------------------------------------
@@ -1134,70 +1079,18 @@ const SAMPLE_FLOWS = [
 function render() {
   const app = document.getElementById('app');
   if (!state.account) {
-    app.innerHTML = renderSetup();
-    bindSetup();
-  } else {
-    app.innerHTML = renderApp();
-    bindApp();
+    app.innerHTML = `
+      <div class="setup-screen">
+        <div class="setup-card" style="text-align:center">
+          <h2>Bilko Flow</h2>
+          <p>Loading...</p>
+          <div class="spinner" style="margin:16px auto"></div>
+        </div>
+      </div>`;
+    return;
   }
-}
-
-// ---- Setup / Login screen -------------------------------------------------
-function renderSetup() {
-  return `
-    <div class="setup-screen">
-      <div class="setup-card">
-        <h2>Bilko Flow</h2>
-        <p>Deterministic workflow orchestration. Sign in to start building and running flows.</p>
-        <div class="form-group">
-          <label>Identity ID</label>
-          <input type="text" id="setup-identity" value="BilkoBibitkov" />
-        </div>
-        <div class="form-group">
-          <label>Password</label>
-          <input type="password" id="setup-password" placeholder="Enter password" />
-        </div>
-        <button class="btn btn-primary" id="setup-btn" style="width:100%;justify-content:center;margin-top:8px;">Sign In</button>
-      </div>
-    </div>`;
-}
-
-function bindSetup() {
-  const btn = document.getElementById('setup-btn');
-  const identityInput = document.getElementById('setup-identity');
-  const passwordInput = document.getElementById('setup-password');
-  if (!btn || !identityInput || !passwordInput) return;
-
-  // Allow pressing Enter to submit from either field
-  [identityInput, passwordInput].forEach(input => {
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') btn.click();
-    });
-  });
-
-  btn.addEventListener('click', async () => {
-    const identityId = identityInput.value.trim();
-    const password = passwordInput.value;
-    if (!identityId) { toast('Enter your identity ID', 'error'); return; }
-    if (!password) { toast('Enter your password', 'error'); return; }
-
-    btn.innerHTML = '<span class="spinner"></span> Signing in...';
-    btn.disabled = true;
-    try {
-      const data = await apiCall('POST', '/api/auth/login', { identityId, password });
-      state.identity = data.identity;
-      state.account = data.account;
-      state.project = data.project;
-      state.environments = data.environments;
-      saveSession();
-      toast('Signed in');
-      render();
-    } catch (err) {
-      toast(err.message, 'error');
-      btn.innerHTML = 'Sign In';
-      btn.disabled = false;
-    }
-  });
+  app.innerHTML = renderApp();
+  bindApp();
 }
 
 // ---- Main app shell -------------------------------------------------------
@@ -1215,7 +1108,6 @@ function renderApp() {
 }
 
 function renderSidebar() {
-  const envName = state.environments[0]?.name || 'N/A';
   return `
     <div class="sidebar">
       <div class="sidebar-header">
@@ -1224,51 +1116,33 @@ function renderSidebar() {
       </div>
       <div class="sidebar-nav">
         <button class="nav-item ${state.view === 'dashboard' ? 'active' : ''}" data-view="dashboard">
-          ${icons.dashboard} Dashboard
+          ${icons.dashboard} Explorer
         </button>
         <button class="nav-item ${state.view === 'workflows' ? 'active' : ''}" data-view="workflows">
           ${icons.workflow} Workflows
         </button>
-        <button class="nav-item ${state.view === 'runs' ? 'active' : ''}" data-view="runs">
-          ${icons.runs} Runs
-        </button>
       </div>
       <div class="sidebar-footer">
         <div class="tenant-info">
-          <div><span class="label">Account</span><span class="value" title="${state.account?.id}">${state.account?.name}</span></div>
-          <div><span class="label">Project</span><span class="value" title="${state.project?.id}">${state.project?.name}</span></div>
-          <div><span class="label">Environment</span><span class="value">${envName}</span></div>
+          <div style="font-size:11px;color:var(--text-secondary);line-height:1.5">
+            Library exploration mode. Workflows are ephemeral and exist only in this session.
+          </div>
         </div>
-        <button class="btn btn-sm" id="logout-btn" style="width:100%;justify-content:center;margin-top:12px;">
-          ${icons.logout} Sign Out
-        </button>
       </div>
     </div>`;
 }
 
 function renderTopbar() {
   const titles = {
-    dashboard: 'Dashboard',
+    dashboard: 'Explorer',
     workflows: state.selectedWorkflow ? 'Workflow Detail' : 'Workflows',
-    runs: state.selectedRun ? 'Run Detail' : 'Runs',
   };
   let actions = '';
   if (state.view === 'workflows' && !state.selectedWorkflow) {
     actions = `<button class="btn btn-primary" id="create-workflow-btn">${icons.plus} New Workflow</button>`;
   }
   if (state.view === 'workflows' && state.selectedWorkflow) {
-    actions = `<button class="btn" id="back-btn">&larr; Back</button>
-               <button class="btn btn-primary" id="run-workflow-btn">${icons.runs} Start Run</button>`;
-  }
-  if (state.view === 'runs' && state.selectedRun) {
-    actions = `<button class="btn" id="back-btn">&larr; Back</button>
-               <button class="btn" id="refresh-run-btn">${icons.refresh} Refresh</button>`;
-  }
-  if (state.view === 'runs' && !state.selectedRun) {
-    actions = `<button class="btn" id="refresh-runs-btn">${icons.refresh} Refresh</button>`;
-  }
-  if (state.view === 'dashboard') {
-    actions = `<button class="btn" id="refresh-dash-btn">${icons.refresh} Refresh</button>`;
+    actions = `<button class="btn" id="back-btn">&larr; Back</button>`;
   }
   return `
     <div class="topbar">
@@ -1281,75 +1155,43 @@ function renderView() {
   switch (state.view) {
     case 'dashboard': return renderDashboard();
     case 'workflows': return state.selectedWorkflow ? renderWorkflowDetail() : renderWorkflowList();
-    case 'runs': return state.selectedRun ? renderRunDetail() : renderRunList();
     default: return '';
   }
 }
 
-// ---- Dashboard view -------------------------------------------------------
+// ---- Dashboard / Explorer view --------------------------------------------
 function renderDashboard() {
   const totalWf = state.workflows.length;
-  const activeWf = state.workflows.filter(w => w.status === 'active').length;
-  const totalRuns = state.runs.length;
-  const succeeded = state.runs.filter(r => r.status === 'succeeded').length;
-  const failed = state.runs.filter(r => r.status === 'failed').length;
-  const running = state.runs.filter(r => r.status === 'running' || r.status === 'queued').length;
-
-  const recentRuns = [...state.runs].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5);
 
   return `
     <div class="stats-grid">
       <div class="stat-card">
-        <div class="stat-label">Workflows</div>
+        <div class="stat-label">Workflows Created</div>
         <div class="stat-value">${totalWf}</div>
-        <div class="stat-sub">${activeWf} active</div>
+        <div class="stat-sub">in this session</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Total Runs</div>
-        <div class="stat-value">${totalRuns}</div>
-        <div class="stat-sub">${running} in progress</div>
+        <div class="stat-label">Mode</div>
+        <div class="stat-value" style="font-size:20px">Explore</div>
+        <div class="stat-sub">generate &amp; inspect flows</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Succeeded</div>
-        <div class="stat-value" style="color:var(--green)">${succeeded}</div>
-        <div class="stat-sub">${totalRuns ? Math.round(succeeded / totalRuns * 100) : 0}% success rate</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Failed</div>
-        <div class="stat-value" style="color:var(--red)">${failed}</div>
-        <div class="stat-sub">${totalRuns ? Math.round(failed / totalRuns * 100) : 0}% failure rate</div>
+        <div class="stat-label">Persistence</div>
+        <div class="stat-value" style="font-size:20px">None</div>
+        <div class="stat-sub">ephemeral, in-memory only</div>
       </div>
     </div>
-    <div class="table-wrap">
-      <div class="table-header">
-        <h3>Recent Runs</h3>
-      </div>
-      ${recentRuns.length ? `
-        <table>
-          <thead><tr>
-            <th>Run ID</th><th>Workflow</th><th>Status</th><th>Created</th>
-          </tr></thead>
-          <tbody>
-            ${recentRuns.map(r => {
-              const wf = state.workflows.find(w => w.id === r.workflowId);
-              return `<tr>
-                <td class="id-cell" data-run-id="${r.id}">${r.id.slice(0, 16)}...</td>
-                <td>${wf ? wf.name : r.workflowId.slice(0, 16)}</td>
-                <td>${statusBadge(r.status)}</td>
-                <td style="color:var(--text-secondary)">${timeAgo(r.createdAt)}</td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-      ` : `
-        <div class="empty-state">
-          ${icons.empty}
-          <h3>No runs yet</h3>
-          <p>Create a workflow and start a run to see activity here.</p>
-        </div>
-      `}
+    <div class="card" style="margin-bottom:24px">
+      <h3 style="font-size:15px;font-weight:600;margin-bottom:8px">About Bilko Flow</h3>
+      <p style="font-size:13px;color:var(--text-secondary);line-height:1.6">
+        This is the Bilko Flow library explorer. Use it to create, visualize, and inspect workflow
+        definitions using the Bilko DSL. Workflows are validated and compiled in real-time so you can
+        learn the DSL and generate flow definitions for use in your own applications.
+        <strong>No flows are executed or persisted</strong> &mdash; everything is ephemeral and exists
+        only in this browser session.
+      </p>
     </div>
-    ${!state.workflows.length ? renderSampleTemplates() : ''}`;
+    ${renderSampleTemplates()}`;
 }
 
 // ---- Sample template rendering --------------------------------------------
@@ -1357,7 +1199,7 @@ function renderSampleTemplates() {
   return `
     <div style="margin-top:24px">
       <div class="section-heading">Sample Flows</div>
-      <div class="section-subheading">Get started quickly with a pre-built workflow template. Click to create.</div>
+      <div class="section-subheading">Explore pre-built workflow templates. Click one to create and inspect it.</div>
       <div class="templates-grid">
         ${SAMPLE_FLOWS.map(t => `
           <div class="template-card" data-template-id="${t.id}">
@@ -1383,8 +1225,8 @@ function renderWorkflowList() {
     return `
       <div class="empty-state">
         ${icons.empty}
-        <h3>No workflows</h3>
-        <p>Create your first workflow from scratch or pick a sample template below.</p>
+        <h3>No workflows yet</h3>
+        <p>Create a workflow from scratch or pick a sample template below to explore.</p>
         <button class="btn btn-primary" id="create-workflow-btn-empty">${icons.plus} New Workflow</button>
       </div>
       ${renderSampleTemplates()}`;
@@ -1553,146 +1395,6 @@ function renderFlowNode(step, entryId, stepResults) {
     </div>`;
 }
 
-// ---- Run list -------------------------------------------------------------
-function renderRunList() {
-  if (!state.runs.length) {
-    return `
-      <div class="empty-state">
-        ${icons.empty}
-        <h3>No runs</h3>
-        <p>Start a run from a workflow to see execution results here.</p>
-      </div>`;
-  }
-
-  const sorted = [...state.runs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  return `
-    <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th>Run ID</th><th>Workflow</th><th>Version</th><th>Status</th><th>Determinism</th><th>Created</th><th>Duration</th>
-        </tr></thead>
-        <tbody>
-          ${sorted.map(r => {
-            const wf = state.workflows.find(w => w.id === r.workflowId);
-            const duration = r.completedAt && r.startedAt
-              ? `${((new Date(r.completedAt) - new Date(r.startedAt))).toFixed(0)}ms`
-              : (r.startedAt ? 'Running...' : '&mdash;');
-            return `<tr>
-              <td class="id-cell run-link" data-run-id="${r.id}">${r.id.slice(0, 20)}...</td>
-              <td>${wf ? wf.name : r.workflowId.slice(0, 16)}</td>
-              <td style="font-family:var(--mono)">v${r.workflowVersion}</td>
-              <td>${statusBadge(r.status)}</td>
-              <td>${r.determinismGrade ? gradeBadge(r.determinismGrade) : '<span style="color:var(--text-secondary)">&mdash;</span>'}</td>
-              <td style="color:var(--text-secondary)">${timeAgo(r.createdAt)}</td>
-              <td style="font-family:var(--mono);font-size:12px">${duration}</td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>`;
-}
-
-// ---- Run detail -----------------------------------------------------------
-function renderRunDetail() {
-  const r = state.selectedRun;
-  if (!r) return '';
-
-  const wf = state.workflows.find(w => w.id === r.workflowId);
-  const stepEntries = Object.entries(r.stepResults || {});
-
-  return `
-    <div class="detail-panel">
-      <div class="detail-header">
-        <h3>Run ${r.id.slice(0, 20)}...</h3>
-        <div style="display:flex;gap:8px;align-items:center">
-          ${statusBadge(r.status)}
-          ${r.status === 'running' || r.status === 'queued' ? `<button class="btn btn-sm btn-danger" id="cancel-run-btn">Cancel</button>` : ''}
-        </div>
-      </div>
-      <div class="detail-body">
-        <div class="detail-grid">
-          <div class="detail-field">
-            <div class="field-label">Run ID</div>
-            <div class="field-value mono">${r.id}</div>
-          </div>
-          <div class="detail-field">
-            <div class="field-label">Workflow</div>
-            <div class="field-value">${wf ? wf.name : r.workflowId}</div>
-          </div>
-          <div class="detail-field">
-            <div class="field-label">Workflow Version</div>
-            <div class="field-value mono">v${r.workflowVersion}</div>
-          </div>
-          <div class="detail-field">
-            <div class="field-label">Determinism Grade</div>
-            <div class="field-value">${r.determinismGrade ? gradeBadge(r.determinismGrade) : 'N/A'}</div>
-          </div>
-          <div class="detail-field">
-            <div class="field-label">Created</div>
-            <div class="field-value">${new Date(r.createdAt).toLocaleString()}</div>
-          </div>
-          <div class="detail-field">
-            <div class="field-label">Started</div>
-            <div class="field-value">${r.startedAt ? new Date(r.startedAt).toLocaleString() : 'N/A'}</div>
-          </div>
-          <div class="detail-field">
-            <div class="field-label">Completed</div>
-            <div class="field-value">${r.completedAt ? new Date(r.completedAt).toLocaleString() : 'N/A'}</div>
-          </div>
-          <div class="detail-field">
-            <div class="field-label">Duration</div>
-            <div class="field-value mono">${r.completedAt && r.startedAt ? `${(new Date(r.completedAt) - new Date(r.startedAt))}ms` : 'N/A'}</div>
-          </div>
-        </div>
-        ${r.error ? `<div style="margin-top:16px;padding:12px;background:rgba(225,112,85,0.1);border:1px solid var(--red);border-radius:var(--radius);font-size:13px"><strong>Error:</strong> ${r.error.message} <code style="font-size:11px">(${r.error.code})</code></div>` : ''}
-      </div>
-    </div>
-
-    ${wf ? `
-    <div class="detail-panel">
-      <div class="detail-header"><h3>Flow Graph</h3></div>
-      <div class="detail-body" style="padding:0">
-        <div class="flow-canvas">
-          ${renderFlowGraph(wf, r.stepResults)}
-        </div>
-      </div>
-    </div>
-    ` : ''}
-
-    <div class="detail-panel">
-      <div class="detail-header"><h3>Step Results (${stepEntries.length})</h3></div>
-      <div class="detail-body" style="padding:12px">
-        ${stepEntries.length ? stepEntries.map(([sid, sr]) => {
-          const step = wf?.steps.find(s => s.id === sid);
-          return `
-            <div class="step-result-item">
-              <div class="step-result-header" data-toggle="${sid}">
-                <div style="display:flex;align-items:center;gap:10px">
-                  <span>${statusBadge(sr.status)}</span>
-                  <strong style="font-size:13px">${step ? step.name : sid}</strong>
-                  <code style="font-size:11px;color:var(--text-secondary)">${step ? step.type : ''}</code>
-                </div>
-                <div style="font-family:var(--mono);font-size:12px;color:var(--text-secondary)">
-                  ${sr.durationMs ? `${sr.durationMs}ms` : ''} ${sr.attempts > 1 ? `(${sr.attempts} attempts)` : ''}
-                </div>
-              </div>
-              <div class="step-result-body" id="step-body-${sid}">
-                ${sr.outputs ? `<div style="margin-bottom:8px"><strong style="font-size:12px">Outputs:</strong><div class="json-view" style="margin-top:4px">${syntaxHighlight(JSON.stringify(sr.outputs, null, 2))}</div></div>` : ''}
-                ${sr.error ? `<div><strong style="font-size:12px;color:var(--red)">Error:</strong><div class="json-view" style="margin-top:4px;border-color:var(--red)">${syntaxHighlight(JSON.stringify(sr.error, null, 2))}</div></div>` : ''}
-              </div>
-            </div>`;
-        }).join('') : '<div style="text-align:center;color:var(--text-secondary);padding:20px">No step results yet</div>'}
-      </div>
-    </div>
-
-    <div class="detail-panel">
-      <div class="detail-header"><h3>Raw Run Data</h3></div>
-      <div class="detail-body">
-        <div class="json-view">${syntaxHighlight(JSON.stringify(r, null, 2))}</div>
-      </div>
-    </div>`;
-}
-
 // ---- Helpers --------------------------------------------------------------
 function statusBadge(status) {
   return `<span class="badge badge-${status}"><span class="badge-dot"></span>${status}</span>`;
@@ -1731,23 +1433,8 @@ function bindApp() {
     el.addEventListener('click', () => {
       state.view = el.dataset.view;
       state.selectedWorkflow = null;
-      state.selectedRun = null;
       render();
     });
-  });
-
-  // Logout
-  document.getElementById('logout-btn')?.addEventListener('click', () => {
-    localStorage.removeItem('bilko_session');
-    localStorage.removeItem('bilko_workflows');
-    localStorage.removeItem('bilko_runs');
-    state.account = null;
-    state.project = null;
-    state.environments = [];
-    state.identity = null;
-    state.workflows = [];
-    state.runs = [];
-    render();
   });
 
   // Create workflow buttons
@@ -1767,77 +1454,10 @@ function bindApp() {
     });
   });
 
-  // Run links
-  document.querySelectorAll('.run-link, [data-run-id]').forEach(el => {
-    el.addEventListener('click', async () => {
-      try {
-        const data = await apiCall('GET', `/api/runs/${el.dataset.runId}`);
-        if (data.run) { state.selectedRun = data.run; state.view = 'runs'; render(); }
-      } catch (err) { toast(err.message, 'error'); }
-    });
-  });
-
   // Back button
   document.getElementById('back-btn')?.addEventListener('click', () => {
     state.selectedWorkflow = null;
-    state.selectedRun = null;
     render();
-  });
-
-  // Run workflow button
-  document.getElementById('run-workflow-btn')?.addEventListener('click', async () => {
-    if (!state.selectedWorkflow) return;
-    try {
-      const data = await apiCall('POST', `/api/workflows/${state.selectedWorkflow.id}/runs`, {});
-      trackRun(data.run.id);
-      state.runs.push(data.run);
-      toast(`Run started: ${data.run.id.slice(0, 16)}`);
-      state.selectedRun = data.run;
-      state.view = 'runs';
-      render();
-    } catch (err) { toast(err.message, 'error'); }
-  });
-
-  // Cancel run
-  document.getElementById('cancel-run-btn')?.addEventListener('click', async () => {
-    if (!state.selectedRun) return;
-    try {
-      const data = await apiCall('POST', `/api/runs/${state.selectedRun.id}/cancel`, { reason: 'Canceled from UI' });
-      state.selectedRun = data.run;
-      toast('Run canceled');
-      render();
-    } catch (err) { toast(err.message, 'error'); }
-  });
-
-  // Refresh
-  document.getElementById('refresh-run-btn')?.addEventListener('click', async () => {
-    if (!state.selectedRun) return;
-    try {
-      const data = await apiCall('GET', `/api/runs/${state.selectedRun.id}`);
-      state.selectedRun = data.run;
-      // Update in runs array too
-      const idx = state.runs.findIndex(r => r.id === data.run.id);
-      if (idx >= 0) state.runs[idx] = data.run;
-      render();
-    } catch (err) { toast(err.message, 'error'); }
-  });
-
-  document.getElementById('refresh-runs-btn')?.addEventListener('click', async () => {
-    await loadRuns();
-    render();
-  });
-
-  document.getElementById('refresh-dash-btn')?.addEventListener('click', async () => {
-    await Promise.all([loadWorkflows(), loadRuns()]);
-    render();
-  });
-
-  // Step result toggles
-  document.querySelectorAll('.step-result-header').forEach(el => {
-    el.addEventListener('click', () => {
-      const body = document.getElementById(`step-body-${el.dataset.toggle}`);
-      if (body) body.classList.toggle('open');
-    });
   });
 }
 
@@ -1859,7 +1479,6 @@ async function createFromTemplate(templateId) {
     payload.environmentId = state.environments[0].id;
 
     const data = await apiCall('POST', '/api/workflows', payload);
-    trackWorkflow(data.workflow.id);
     state.workflows.push(data.workflow);
     toast(`Created: ${data.workflow.name}`);
     state.selectedWorkflow = data.workflow;
@@ -2029,7 +1648,6 @@ function showCreateWorkflowModal() {
       payload.environmentId = state.environments[0].id;
 
       const data = await apiCall('POST', '/api/workflows', payload);
-      trackWorkflow(data.workflow.id);
       state.workflows.push(data.workflow);
       toast(`Workflow created: ${data.workflow.name}`);
       close();
@@ -2046,10 +1664,9 @@ function showCreateWorkflowModal() {
 
 // ---- Init -----------------------------------------------------------------
 async function init() {
-  if (loadSession()) {
-    await Promise.all([loadWorkflows(), loadRuns()]);
-  }
-  render();
+  render(); // Show loading state
+  await initSession();
+  render(); // Render app once session is ready
 }
 
 init();

@@ -94,8 +94,9 @@ describe('Account API', () => {
     expect(res.status).toBe(400);
   });
 
-  test('unauthenticated request to non-bootstrap endpoint is rejected', async () => {
+  test('unauthenticated request to non-bootstrap endpoint is allowed (no auth required)', async () => {
     const res = await request(app, 'GET', '/api/accounts/acct_fake');
-    expect(res.status).toBe(401);
+    // Auth is disabled — returns 404 (not found) instead of 401
+    expect(res.status).toBe(404);
   });
 });
