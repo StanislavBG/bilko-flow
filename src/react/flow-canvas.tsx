@@ -154,6 +154,26 @@ export function FlowCanvas({
     }
   }, [onDeselectStep]);
 
+  // Arrow key step navigation
+  const navigateStep = useCallback((direction: 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown') => {
+    if (flow.steps.length === 0) return;
+
+    const currentIdx = selectedStepId
+      ? flow.steps.findIndex(s => s.id === selectedStepId)
+      : -1;
+
+    let nextIdx: number;
+    if (currentIdx < 0) {
+      nextIdx = 0;
+    } else if (direction === 'ArrowRight' || direction === 'ArrowDown') {
+      nextIdx = Math.min(flow.steps.length - 1, currentIdx + 1);
+    } else {
+      nextIdx = Math.max(0, currentIdx - 1);
+    }
+
+    onSelectStep(flow.steps[nextIdx].id);
+  }, [flow.steps, selectedStepId, onSelectStep]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -182,6 +202,13 @@ export function FlowCanvas({
         case '-':
           zoomOut();
           break;
+        case 'ArrowLeft':
+        case 'ArrowRight':
+        case 'ArrowUp':
+        case 'ArrowDown':
+          e.preventDefault();
+          navigateStep(e.key as 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown');
+          break;
         case 'Escape':
           onDeselectStep?.();
           break;
@@ -193,7 +220,7 @@ export function FlowCanvas({
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [searchOpen, fitView, zoomIn, zoomOut, onDeselectStep]);
+  }, [searchOpen, fitView, zoomIn, zoomOut, onDeselectStep, navigateStep]);
 
   // Step map for lookups
   const stepMap = useMemo(
@@ -287,6 +314,7 @@ export function FlowCanvas({
           <div><kbd className="text-gray-400 bg-gray-700 px-1 rounded">/</kbd> Search</div>
           <div><kbd className="text-gray-400 bg-gray-700 px-1 rounded">F</kbd> Fit view</div>
           <div><kbd className="text-gray-400 bg-gray-700 px-1 rounded">+</kbd> / <kbd className="text-gray-400 bg-gray-700 px-1 rounded">-</kbd> Zoom</div>
+          <div><kbd className="text-gray-400 bg-gray-700 px-1 rounded">{'\u2190'}</kbd> <kbd className="text-gray-400 bg-gray-700 px-1 rounded">{'\u2192'}</kbd> Navigate steps</div>
           <div><kbd className="text-gray-400 bg-gray-700 px-1 rounded">Esc</kbd> Deselect</div>
           <div><kbd className="text-gray-400 bg-gray-700 px-1 rounded">?</kbd> Toggle this</div>
         </div>
@@ -382,13 +410,28 @@ export function FlowCanvas({
         })}
       </div>
 
-      {/* Minimap */}
+      {/* Minimap — clickable to pan */}
       <div className="absolute bottom-3 right-3 z-10 bg-gray-800/80 border border-gray-700 rounded p-1">
         <svg
           width={120}
           height={80}
           viewBox={`0 0 ${layout.width || 1} ${layout.height || 1}`}
-          className="block"
+          className="block cursor-pointer"
+          onClick={(e) => {
+            const svg = e.currentTarget;
+            const rect = svg.getBoundingClientRect();
+            const svgX = ((e.clientX - rect.left) / rect.width) * (layout.width || 1);
+            const svgY = ((e.clientY - rect.top) / rect.height) * (layout.height || 1);
+            // Center the viewport on the clicked point
+            if (containerRef.current) {
+              const vpW = containerRef.current.clientWidth / zoom;
+              const vpH = containerRef.current.clientHeight / zoom;
+              setPan({
+                x: -(svgX - vpW / 2) * zoom,
+                y: -(svgY - vpH / 2) * zoom,
+              });
+            }
+          }}
         >
           {/* Edges */}
           {layout.edges.map(edge => (
