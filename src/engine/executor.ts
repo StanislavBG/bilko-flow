@@ -7,8 +7,9 @@
  */
 
 import { v4 as uuid } from 'uuid';
-import { createHash } from 'crypto';
+import { createHash, createHmac } from 'crypto';
 import { TenantScope } from '../domain/account';
+import { logger } from '../logger';
 import { DeterminismGrade } from '../domain/determinism';
 import { Run, RunStatus, StepRunStatus, StepRunResult, CreateRunInput } from '../domain/run';
 import { Workflow } from '../domain/workflow';
@@ -436,6 +437,19 @@ export class WorkflowExecutor {
       }
     }
 
+    const statement = {
+      workflowHash: plan.workflowHash,
+      inputHashes,
+      stepImageDigests,
+      artifactHashes,
+      determinismGrade: run.determinismGrade ?? DeterminismGrade.BestEffort,
+    };
+
+    // HMAC-sign the statement for integrity verification
+    const statementJson = JSON.stringify(statement, Object.keys(statement).sort());
+    const signingKey = process.env.BILKO_ATTESTATION_KEY ?? `bilko-dev-key-${scope.accountId}`;
+    const signature = createHmac('sha256', signingKey).update(statementJson).digest('hex');
+
     const attestation: Attestation = {
       id: `att_${uuid()}`,
       runId: run.id,
@@ -447,13 +461,10 @@ export class WorkflowExecutor {
         workflowVersion: run.workflowVersion,
         provenanceId: run.provenanceId ?? '',
       },
-      statement: {
-        workflowHash: plan.workflowHash,
-        inputHashes,
-        stepImageDigests,
-        artifactHashes,
-        determinismGrade: run.determinismGrade ?? DeterminismGrade.BestEffort,
-      },
+      statement,
+      signature,
+      signatureAlgorithm: 'hmac-sha256',
+      verificationKeyId: process.env.BILKO_ATTESTATION_KEY ? 'env:BILKO_ATTESTATION_KEY' : `dev:${scope.accountId}`,
       issuedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
     };

@@ -8,6 +8,7 @@
 import { StepRunStatus, StepRunResult } from '../domain/run';
 import { TypedError, createTypedError, stepTimeoutError } from '../domain/errors';
 import { CompiledStep } from '../dsl/compiler';
+import { logger } from '../logger';
 
 /** Step execution context provided by the engine. */
 export interface StepExecutionContext {
@@ -58,6 +59,33 @@ function getDefaultHandler(stepType: string): StepHandler {
   };
 }
 
+/**
+ * Validate determinism declarations against step type heuristics.
+ * Logs warnings when a step is declared pure but uses types that
+ * typically involve external APIs or nondeterminism.
+ */
+function validateDeterminismDeclarations(step: CompiledStep): void {
+  const externalTypes = ['http.request', 'http.search', 'ai.summarize', 'ai.generate-text', 'ai.generate-image', 'ai.generate-video', 'social.post', 'notification.send'];
+  const isExternalType = externalTypes.includes(step.type);
+
+  if (step.determinism?.pureFunction && isExternalType) {
+    logger.warn('Determinism declaration conflict', {
+      stepId: step.id,
+      stepType: step.type,
+      issue: `Step declared as pureFunction but type "${step.type}" typically involves external APIs`,
+      recommendation: 'Set pureFunction: false and usesExternalApis: true, or use determinism grade Replayable/BestEffort',
+    });
+  }
+
+  if (step.determinism && !step.determinism.usesExternalApis && isExternalType) {
+    logger.warn('Determinism declaration conflict', {
+      stepId: step.id,
+      stepType: step.type,
+      issue: `Step declares usesExternalApis: false but type "${step.type}" implies external API usage`,
+    });
+  }
+}
+
 /** Execute a single step with retry and timeout policy. */
 export async function executeStep(
   step: CompiledStep,
@@ -65,6 +93,9 @@ export async function executeStep(
 ): Promise<StepRunResult> {
   const startedAt = new Date().toISOString();
   const handler = stepHandlers.get(step.type) ?? getDefaultHandler(step.type);
+
+  // Validate determinism declarations before execution
+  validateDeterminismDeclarations(step);
 
   let lastError: TypedError | undefined;
 

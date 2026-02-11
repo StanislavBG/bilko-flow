@@ -9,6 +9,7 @@ import { apiError, authError, TypedError, createTypedError } from '../domain/err
 import { Store } from '../storage/store';
 import { AuditService } from '../audit/audit-service';
 import { AuditAction, AuditResourceType } from '../domain/audit';
+import { logger } from '../logger';
 
 /** Extended request with identity and scope context. */
 export interface AuthenticatedRequest extends Request {
@@ -103,8 +104,13 @@ export function auditLog(
           resourceId: getResourceId(req),
           outcome: 'success',
         });
-      } catch {
-        // Audit logging should not block the request
+      } catch (err) {
+        // Audit logging should not block the request, but we log the failure
+        logger.error('Audit logging failed', {
+          action,
+          resourceType,
+          error: err instanceof Error ? err.message : 'Unknown error',
+        });
       }
     }
     next();
@@ -115,9 +121,15 @@ export function auditLog(
 export function errorHandler(err: any, _req: Request, res: Response, _next: NextFunction) {
   if (err.typedError) {
     const status = getHttpStatus(err.typedError);
+    logger.warn('Request error', { code: err.typedError.code, status });
     res.status(status).json(apiError(err.typedError));
     return;
   }
+
+  logger.error('Unhandled request error', {
+    message: err.message || 'Internal server error',
+    stack: err.stack,
+  });
 
   const typedError = createTypedError({
     code: 'SYSTEM.INTERNAL',
