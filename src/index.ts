@@ -30,3 +30,4 @@ export * from './planner';
 export * from './data-plane';
 export * from './audit';
 export * from './notifications';
+export * from './llm';
