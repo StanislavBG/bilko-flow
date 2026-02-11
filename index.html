@@ -1665,7 +1665,18 @@ function showCreateWorkflowModal() {
 // ---- Init -----------------------------------------------------------------
 async function init() {
   render(); // Show loading state
-  await initSession();
+  const ok = await initSession();
+  if (!ok) {
+    document.getElementById('app').innerHTML = `
+      <div class="setup-screen">
+        <div class="setup-card" style="text-align:center">
+          <h2>Bilko Flow</h2>
+          <p style="color:var(--red)">Could not connect to the API server. Make sure the Express server is running on port 5000.</p>
+          <button class="btn btn-primary" onclick="location.reload()" style="margin-top:12px">Retry</button>
+        </div>
+      </div>`;
+    return;
+  }
   render(); // Render app once session is ready
 }
 
