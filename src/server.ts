@@ -22,6 +22,7 @@ import { createRunRoutes } from './api/runs';
 import { createArtifactRoutes } from './api/artifacts';
 import { createAttestationRoutes } from './api/attestations';
 import { createEventRoutes } from './api/events';
+import { createLLMRoutes } from './api/llm';
 import { v4 as uuid } from 'uuid';
 import { AccountStatus, EnvironmentType } from './domain/account';
 import { Role, RbacScopeLevel } from './domain/rbac';
@@ -103,6 +104,7 @@ export function createApp(context?: AppContext): express.Application {
   v1.use('/', createArtifactRoutes(ctx.store));
   v1.use('/', createAttestationRoutes(ctx.store));
   v1.use('/', createEventRoutes(ctx.store, ctx.publisher));
+  v1.use('/llm', createLLMRoutes());
   app.use('/api/v1', v1);
 
   // Backward-compatible unversioned routes
@@ -112,6 +114,7 @@ export function createApp(context?: AppContext): express.Application {
   app.use('/api', createArtifactRoutes(ctx.store));
   app.use('/api', createAttestationRoutes(ctx.store));
   app.use('/api', createEventRoutes(ctx.store, ctx.publisher));
+  app.use('/api/llm', createLLMRoutes());
 
   // Error handler
   app.use(errorHandler);
