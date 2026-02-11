@@ -10,7 +10,6 @@
  */
 
 import { createApp, createAppContext, seedDefaultUser } from './server';
-import { logger } from './logger';
 
 const PORT = parseInt(process.env.PORT ?? '5000', 10);
 
@@ -18,13 +17,7 @@ const context = createAppContext();
 const app = createApp(context);
 
 seedDefaultUser(context).then(() => {
-  app.listen(PORT, () => {
-    logger.info('Server started', {
-      port: PORT,
-      specVersion: '1.0.0',
-      mode: 'library-explorer',
-    });
-  });
+  app.listen(PORT);
 });
 
 // Public exports for programmatic use
@@ -37,4 +30,3 @@ export * from './planner';
 export * from './data-plane';
 export * from './audit';
 export * from './notifications';
-export * from './logger';

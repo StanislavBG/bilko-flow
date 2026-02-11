@@ -51,7 +51,6 @@ src/
   notifications/  # Webhook delivery with HMAC signing
   data-plane/     # Event publication system
   audit/          # Immutable audit trail
-  logger.ts       # Structured logging abstraction
 ```
 
 ## Key Concepts

@@ -9,7 +9,6 @@
 import { v4 as uuid } from 'uuid';
 import { createHash, createHmac } from 'crypto';
 import { TenantScope } from '../domain/account';
-import { logger } from '../logger';
 import { DeterminismGrade } from '../domain/determinism';
 import { Run, RunStatus, StepRunStatus, StepRunResult, CreateRunInput } from '../domain/run';
 import { Workflow } from '../domain/workflow';

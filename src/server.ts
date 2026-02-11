@@ -25,7 +25,6 @@ import { createEventRoutes } from './api/events';
 import { v4 as uuid } from 'uuid';
 import { AccountStatus, EnvironmentType } from './domain/account';
 import { Role, RbacScopeLevel } from './domain/rbac';
-import { logger } from './logger';
 
 const startTime = Date.now();
 
@@ -194,5 +193,4 @@ export async function seedDefaultUser(ctx: AppContext): Promise<void> {
     identity: devIdentity,
   };
 
-  logger.info('Dev session initialized', { identity: devIdentity, mode: 'library-explorer' });
 }

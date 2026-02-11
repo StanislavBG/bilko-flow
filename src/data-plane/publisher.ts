@@ -9,7 +9,6 @@ import { v4 as uuid } from 'uuid';
 import { Run } from '../domain/run';
 import { DataPlaneEvent, DataPlaneEventType, EventSubscription } from '../domain/events';
 import { Store } from '../storage/store';
-import { logger } from '../logger';
 
 /** The data plane publisher. */
 export class DataPlanePublisher {
@@ -80,13 +79,9 @@ export class DataPlanePublisher {
       if (this.matchesSubscription(event, sub)) {
         try {
           sub.callback(event);
-        } catch (err) {
-          logger.error('Event subscription callback failed', {
-            subscriptionId: sub.id,
-            eventType: event.type,
-            eventId: event.id,
-            error: err instanceof Error ? err.message : 'Unknown error',
-          });
+        } catch {
+          // Subscription callbacks should not throw, but we swallow errors
+          // to avoid impacting event publication.
         }
       }
     }

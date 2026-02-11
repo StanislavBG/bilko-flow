@@ -11,7 +11,6 @@ import { Run } from '../domain/run';
 import { Workflow, WebhookEventType } from '../domain/workflow';
 import { TypedError } from '../domain/errors';
 import { DeterminismGrade } from '../domain/determinism';
-import { logger } from '../logger';
 
 /** Webhook payload for run events. */
 export interface WebhookPayload {
@@ -129,23 +128,9 @@ export class WebhookService {
         payload,
       };
       this.deliveryLog.push(result);
-      if (!result.success) {
-        logger.warn('Webhook delivery returned non-2xx', {
-          url: workflow.notification.webhookUrl,
-          statusCode: response.statusCode,
-          event,
-          runId: run.id,
-        });
-      }
       return result;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Webhook delivery failed';
-      logger.error('Webhook delivery failed', {
-        url: workflow.notification.webhookUrl,
-        event,
-        runId: run.id,
-        error: errorMessage,
-      });
       const result: WebhookDeliveryResult = {
         success: false,
         error: errorMessage,
