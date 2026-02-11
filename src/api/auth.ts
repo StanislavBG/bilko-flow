@@ -1,15 +1,42 @@
 /**
- * Auth API routes.
+ * Auth API routes and credential utilities.
  *
  * POST /auth/login — Validate credentials and return session data.
+ *
+ * Password hashing uses PBKDF2 with per-credential random salts.
+ * This is a reference implementation for the library explorer.
  */
 
 import { Router } from 'express';
-import { createHash } from 'crypto';
+import { pbkdf2Sync, randomBytes, timingSafeEqual } from 'crypto';
 import { Store } from '../storage/store';
 
+const PBKDF2_ITERATIONS = 100_000;
+const PBKDF2_KEYLEN = 64;
+const PBKDF2_DIGEST = 'sha512';
+const SALT_BYTES = 32;
+
+/**
+ * Hash a password using PBKDF2 with a random salt.
+ * Returns `salt:derivedKey` as a hex string.
+ */
 export function hashPassword(password: string): string {
-  return createHash('sha256').update(password).digest('hex');
+  const salt = randomBytes(SALT_BYTES).toString('hex');
+  const derived = pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, PBKDF2_KEYLEN, PBKDF2_DIGEST).toString('hex');
+  return `${salt}:${derived}`;
+}
+
+/**
+ * Verify a password against a stored hash.
+ * Uses constant-time comparison to prevent timing attacks.
+ */
+export function verifyPassword(password: string, storedHash: string): boolean {
+  const [salt, expectedKey] = storedHash.split(':');
+  if (!salt || !expectedKey) return false;
+  const derived = pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, PBKDF2_KEYLEN, PBKDF2_DIGEST);
+  const expected = Buffer.from(expectedKey, 'hex');
+  if (derived.length !== expected.length) return false;
+  return timingSafeEqual(derived, expected);
 }
 
 export function createAuthRoutes(store: Store): Router {
@@ -29,7 +56,7 @@ export function createAuthRoutes(store: Store): Router {
       }
 
       const credential = await store.credentials.get(identityId);
-      if (!credential || credential.passwordHash !== hashPassword(password)) {
+      if (!credential || !verifyPassword(password, credential.passwordHash)) {
         res.status(401).json({ error: { message: 'Invalid credentials' } });
         return;
       }

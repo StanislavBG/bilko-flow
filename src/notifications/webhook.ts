@@ -1,12 +1,12 @@
 /**
  * Webhook Notification Service.
  *
- * Delivers run-time events to configured webhook endpoints.
- * Webhooks are one delivery method alongside the broader
- * run-time data plane.
+ * Delivers run-time events to configured webhook endpoints via HTTP POST.
+ * Includes HMAC signature for payload verification when a signing secret is configured.
  */
 
 import { v4 as uuid } from 'uuid';
+import { createHmac } from 'crypto';
 import { Run } from '../domain/run';
 import { Workflow, WebhookEventType } from '../domain/workflow';
 import { TypedError } from '../domain/errors';
@@ -43,13 +43,42 @@ export interface WebhookDeliveryResult {
 export type WebhookDeliveryFn = (
   url: string,
   payload: WebhookPayload,
+  signingSecret?: string,
 ) => Promise<{ statusCode: number }>;
 
-/** Default HTTP webhook delivery. */
-const defaultDelivery: WebhookDeliveryFn = async (url: string, payload: WebhookPayload) => {
-  // In a production implementation, this would make an actual HTTP request.
-  // For the reference implementation, we simulate successful delivery.
-  return { statusCode: 200 };
+/** HTTP webhook delivery using native fetch with HMAC signing. */
+const httpDelivery: WebhookDeliveryFn = async (
+  url: string,
+  payload: WebhookPayload,
+  signingSecret?: string,
+) => {
+  const body = JSON.stringify(payload);
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'User-Agent': 'bilko-flow-webhook/0.2.0',
+    'X-Webhook-Id': payload.id,
+    'X-Webhook-Event': payload.event,
+  };
+
+  if (signingSecret) {
+    const signature = createHmac('sha256', signingSecret).update(body).digest('hex');
+    headers['X-Webhook-Signature'] = `sha256=${signature}`;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body,
+      signal: controller.signal,
+    });
+    return { statusCode: response.status };
+  } finally {
+    clearTimeout(timeout);
+  }
 };
 
 /** The webhook notification service. */
@@ -59,7 +88,7 @@ export class WebhookService {
   private deliveryLog: WebhookDeliveryResult[] = [];
 
   constructor(deliveryFn?: WebhookDeliveryFn) {
-    this.deliveryFn = deliveryFn ?? defaultDelivery;
+    this.deliveryFn = deliveryFn ?? httpDelivery;
   }
 
   /** Send a webhook notification for a run event. */
@@ -88,7 +117,11 @@ export class WebhookService {
     const payload = this.buildPayload(event, run, workflow, extra);
 
     try {
-      const response = await this.deliveryFn(workflow.notification.webhookUrl, payload);
+      const response = await this.deliveryFn(
+        workflow.notification.webhookUrl,
+        payload,
+        workflow.notification.signingSecretKey,
+      );
       const result: WebhookDeliveryResult = {
         success: response.statusCode >= 200 && response.statusCode < 300,
         statusCode: response.statusCode,
@@ -97,9 +130,10 @@ export class WebhookService {
       this.deliveryLog.push(result);
       return result;
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Webhook delivery failed';
       const result: WebhookDeliveryResult = {
         success: false,
-        error: err instanceof Error ? err.message : 'Webhook delivery failed',
+        error: errorMessage,
         payload,
       };
       this.deliveryLog.push(result);

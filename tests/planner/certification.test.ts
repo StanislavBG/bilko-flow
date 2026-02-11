@@ -9,7 +9,7 @@ describe('Planner Certification', () => {
     const result = await certifyPlanner(planner);
 
     expect(result.passed).toBe(true);
-    expect(result.plannerInfo.name).toBe('bilko-default-planner');
+    expect(result.plannerInfo.name).toBe('bilko-reference-planner');
     expect(result.tests.every(t => t.passed)).toBe(true);
   });
 

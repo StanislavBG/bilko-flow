@@ -21,6 +21,15 @@ export interface ListOptions {
   offset?: number;
 }
 
+/** Paginated list result with metadata. */
+export interface ListResult<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
 /** Store interface for accounts. */
 export interface AccountStore {
   create(account: Account): Promise<Account>;
@@ -113,6 +122,19 @@ export interface CredentialRecord {
 export interface CredentialStore {
   set(identityId: string, record: CredentialRecord): Promise<void>;
   get(identityId: string): Promise<CredentialRecord | null>;
+}
+
+/** Build a paginated ListResult from items and total count. */
+export function toListResult<T>(items: T[], total: number, options?: ListOptions): ListResult<T> {
+  const limit = options?.limit ?? 100;
+  const offset = options?.offset ?? 0;
+  return {
+    items,
+    total,
+    limit,
+    offset,
+    hasMore: offset + items.length < total,
+  };
 }
 
 /** Composite store interface. */

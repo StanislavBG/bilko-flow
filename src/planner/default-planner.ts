@@ -1,9 +1,21 @@
 /**
- * Default Planner Implementation.
+ * Default Planner — Reference Protocol Implementation.
  *
- * A reference planner that produces simple workflow proposals
- * based on goal descriptions. This serves as an example of
- * planner interface compliance.
+ * This is a conformance reference for the Planner protocol, NOT an
+ * AI-powered planning engine. It demonstrates:
+ *
+ * 1. How to implement the Planner interface correctly
+ * 2. How proposeWorkflow/proposePatch/proposeRepair/explainPlan work
+ * 3. How the certification suite validates planner outputs
+ *
+ * Real planner implementations would wrap an LLM or planning engine
+ * (e.g., Claude, GPT, custom solver) and produce domain-appropriate
+ * step graphs. The key contract: planner outputs are always validated
+ * against the DSL before acceptance (untrusted until certified).
+ *
+ * To implement your own planner, implement the `Planner` interface
+ * from ./interface.ts and pass it through `certifyPlanner()` to
+ * verify conformance.
  */
 
 import { DeterminismGrade } from '../domain/determinism';
@@ -18,10 +30,15 @@ import {
   RepairContext,
 } from './interface';
 
+/**
+ * Reference planner that produces minimal valid workflow proposals.
+ * Used for protocol conformance testing and as a template for
+ * custom planner implementations.
+ */
 export class DefaultPlanner implements Planner {
   getVersionInfo(): PlannerVersionInfo {
     return {
-      name: 'bilko-default-planner',
+      name: 'bilko-reference-planner',
       version: '1.0.0',
       supportedDslVersions: ['1.0.0'],
       supportedStepPacks: [
@@ -30,13 +47,20 @@ export class DefaultPlanner implements Planner {
     };
   }
 
+  /**
+   * Propose a minimal valid workflow for a goal.
+   *
+   * A real implementation would analyze the goal description,
+   * select appropriate step types, configure inputs/outputs,
+   * and declare accurate determinism properties.
+   */
   async proposeWorkflow(goal: PlanGoal): Promise<WorkflowProposal> {
     const steps: Omit<Step, 'workflowId'>[] = [];
     const secrets: SecretRequirement[] = [];
 
-    // Simple heuristic: create a minimal pure transform workflow
     const targetGrade = goal.determinismTarget?.targetGrade ?? DeterminismGrade.BestEffort;
 
+    // Reference: produce a minimal 2-step pure transform pipeline
     steps.push({
       id: 'step_1',
       name: 'Process input',
@@ -81,6 +105,12 @@ export class DefaultPlanner implements Planner {
     };
   }
 
+  /**
+   * Propose a patch to an existing workflow.
+   *
+   * A real implementation would analyze the goal delta and produce
+   * targeted step additions, removals, or updates.
+   */
   async proposePatch(workflow: any, goal: PlanGoal): Promise<WorkflowPatch> {
     return {
       workflowId: workflow.id,
@@ -90,14 +120,19 @@ export class DefaultPlanner implements Planner {
     };
   }
 
+  /**
+   * Propose repairs based on typed errors and suggested fixes.
+   *
+   * This reference implementation applies machine-actionable
+   * suggested fixes (e.g., INCREASE_TIMEOUT). A real planner
+   * could apply more sophisticated reasoning.
+   */
   async proposeRepair(context: RepairContext): Promise<WorkflowPatch> {
     const updateSteps: Record<string, Partial<Step>> = {};
 
-    // Apply suggested fixes
     for (const { errorCode, fixes } of context.suggestedFixes) {
       for (const fix of fixes) {
         if (fix.type === 'INCREASE_TIMEOUT') {
-          // Find the affected step and increase its timeout
           for (const step of context.workflow.steps) {
             if (step.policy.timeoutMs < (fix.params.timeoutMs as number)) {
               updateSteps[step.id] = {
@@ -120,6 +155,12 @@ export class DefaultPlanner implements Planner {
     };
   }
 
+  /**
+   * Explain planning reasoning.
+   *
+   * A real implementation would provide detailed reasoning from
+   * the underlying planning engine or LLM.
+   */
   async explainPlan(goal: PlanGoal): Promise<PlanExplanation> {
     return {
       reasoningSteps: [

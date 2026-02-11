@@ -1,7 +1,7 @@
 {
   "name": "bilko-flow",
-  "version": "0.1.0",
-  "description": "Deterministic workflow creation and execution backend service",
+  "version": "0.2.0",
+  "description": "Typed DSL, determinism model, and planner protocol for deterministic workflow creation — designed for AI agent consumption",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
