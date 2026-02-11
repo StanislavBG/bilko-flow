@@ -160,6 +160,45 @@ export function determinismViolationError(message: string, stepId?: string, fixe
   });
 }
 
+/**
+ * Create a typed error for an external API call failure, with retryability
+ * determined by HTTP status code.
+ *
+ * - 400, 401, 403, 404: Non-retryable configuration errors (bad model name,
+ *   wrong API key, resource doesn't exist). Fix the config and re-deploy.
+ * - 429: Rate limited — retryable after backoff.
+ * - 500, 502, 503, 504: Transient server errors — retryable.
+ * - Everything else: Non-retryable by default.
+ */
+export function stepExternalApiError(
+  stepId: string,
+  message: string,
+  statusCode: number,
+  details?: Record<string, unknown>,
+): TypedError {
+  const retryable = statusCode === 429 || statusCode >= 500;
+  const fixes: SuggestedFix[] = [];
+
+  if (statusCode === 404) {
+    fixes.push({ type: 'FIX_RESOURCE_NOT_FOUND', params: { statusCode }, description: 'The requested resource (e.g., model) does not exist. Verify the identifier.' });
+  } else if (statusCode === 401 || statusCode === 403) {
+    fixes.push({ type: 'CHECK_API_KEY', params: { statusCode }, description: 'Authentication failed. Verify the API key has the required permissions.' });
+  } else if (statusCode === 429) {
+    fixes.push({ type: 'WAIT_AND_RETRY', params: { delayMs: 2000 }, description: 'Rate limit exceeded. Retry after backoff.' });
+  } else if (statusCode >= 500) {
+    fixes.push({ type: 'WAIT_AND_RETRY', params: { delayMs: 5000 }, description: 'Transient server error. Retry after backoff.' });
+  }
+
+  return createTypedError({
+    code: retryable ? 'STEP.EXTERNAL_API.TRANSIENT' : 'STEP.EXTERNAL_API.CONFIG',
+    message,
+    stepId,
+    retryable,
+    details: { statusCode, ...details },
+    suggestedFixes: fixes,
+  });
+}
+
 /** API error response wrapper. */
 export interface ApiErrorResponse {
   error: TypedError;

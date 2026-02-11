@@ -23,9 +23,39 @@ export interface StepExecutionContext {
   canceled: boolean;
 }
 
+/** Input field constraint for a step handler. */
+export interface InputFieldContract {
+  type: 'string' | 'number' | 'boolean' | 'object' | 'array';
+  required?: boolean;
+  /** Static allowed values, or a function that resolves them at validation time. */
+  oneOf?: readonly string[] | (() => string[]);
+  /** Human-readable description of this field. */
+  description?: string;
+}
+
+/** Result of a step handler's validate hook. */
+export interface StepValidationResult {
+  valid: boolean;
+  errors: string[];
+}
+
 /** Step handler interface — pluggable step implementations. */
 export interface StepHandler {
   type: string;
+
+  /**
+   * Declare the expected shape of step inputs.
+   * Used during compilation to catch configuration errors early.
+   */
+  inputContract?: Record<string, InputFieldContract>;
+
+  /**
+   * Pre-flight validation called during workflow compilation.
+   * Validates step inputs against runtime constraints (e.g., model availability).
+   * Return errors to block compilation; return valid to allow execution.
+   */
+  validate?(step: CompiledStep): StepValidationResult | Promise<StepValidationResult>;
+
   execute(
     step: CompiledStep,
     context: StepExecutionContext,
@@ -38,6 +68,16 @@ const stepHandlers = new Map<string, StepHandler>();
 /** Register a step handler. */
 export function registerStepHandler(handler: StepHandler): void {
   stepHandlers.set(handler.type, handler);
+}
+
+/** Get a registered handler by type. Returns undefined if not registered. */
+export function getStepHandler(type: string): StepHandler | undefined {
+  return stepHandlers.get(type);
+}
+
+/** Get all registered step handlers. */
+export function getRegisteredHandlers(): Map<string, StepHandler> {
+  return stepHandlers;
 }
 
 /** Default step handler that returns mock outputs for development. */
@@ -96,6 +136,29 @@ export async function executeStep(
         durationMs: new Date(completedAt).getTime() - new Date(startedAt).getTime(),
       };
     } catch (err) {
+      // Non-retryable errors (e.g., 404 model not found, 400 bad config)
+      // should fail immediately without exhausting retry attempts.
+      if (err instanceof NonRetryableStepError) {
+        return {
+          stepId: step.id,
+          status: StepRunStatus.Failed,
+          startedAt,
+          completedAt: new Date().toISOString(),
+          error: createTypedError({
+            code: 'STEP.NON_RETRYABLE',
+            message: err.message,
+            stepId: step.id,
+            retryable: false,
+            details: { attempt, statusCode: err.statusCode },
+            suggestedFixes: [
+              { type: 'FIX_CONFIGURATION', params: {}, description: 'Fix the step configuration (e.g., model name, API key)' },
+            ],
+          }),
+          attempts: attempt,
+          durationMs: Date.now() - new Date(startedAt).getTime(),
+        };
+      }
+
       const isTimeout = err instanceof TimeoutError;
       lastError = isTimeout
         ? stepTimeoutError(step.id, step.policy.timeoutMs, attempt)
@@ -149,6 +212,23 @@ class TimeoutError extends Error {
   constructor(public timeoutMs: number) {
     super(`Step execution timed out after ${timeoutMs}ms`);
     this.name = 'TimeoutError';
+  }
+}
+
+/**
+ * Error that step handlers throw to indicate the failure is non-retryable.
+ *
+ * Use this for configuration errors (wrong model name, invalid API key, 404s)
+ * that will never succeed regardless of how many times we retry.
+ * The step runner will immediately fail the step without exhausting retry attempts.
+ */
+export class NonRetryableStepError extends Error {
+  public readonly statusCode?: number;
+
+  constructor(message: string, statusCode?: number) {
+    super(message);
+    this.name = 'NonRetryableStepError';
+    this.statusCode = statusCode;
   }
 }
 

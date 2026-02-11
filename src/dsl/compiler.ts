@@ -7,10 +7,11 @@
 
 import { createHash } from 'crypto';
 import { DeterminismGrade, DeterminismAnalysis, DeterminismViolation } from '../domain/determinism';
-import { TypedError, workflowCompilationError } from '../domain/errors';
+import { TypedError, createTypedError, workflowCompilationError } from '../domain/errors';
 import { Workflow, Step } from '../domain/workflow';
 import { HashRecord } from '../domain/provenance';
 import { validateWorkflow, ValidationResult } from './validator';
+import { getStepHandler, InputFieldContract } from '../engine/step-runner';
 
 /** A compiled step with execution metadata. */
 export interface CompiledStep {
@@ -90,6 +91,13 @@ export function compileWorkflow(workflow: Workflow): CompilationResult {
   const compiledSteps: Record<string, CompiledStep> = {};
   for (const step of workflow.steps) {
     compiledSteps[step.id] = compileStep(step);
+  }
+
+  // Phase 3b: Handler input contract validation
+  const handlerErrors = validateHandlerContracts(compiledSteps);
+  if (handlerErrors.length > 0) {
+    errors.push(...handlerErrors);
+    return { success: false, errors, validation };
   }
 
   // Phase 4: Determinism analysis
@@ -223,6 +231,117 @@ function analyzeDeterminism(
     satisfied: violations.length === 0,
     violations,
   };
+}
+
+/**
+ * Validate compiled step inputs against their registered handler's inputContract.
+ *
+ * This catches configuration errors at compile time — for example, a step
+ * referencing a model name that doesn't exist in the handler's allowed list.
+ * Only validates steps whose handlers have declared an inputContract.
+ */
+function validateHandlerContracts(compiledSteps: Record<string, CompiledStep>): TypedError[] {
+  const errors: TypedError[] = [];
+
+  for (const step of Object.values(compiledSteps)) {
+    const handler = getStepHandler(step.type);
+    if (!handler?.inputContract) continue;
+
+    for (const [field, contract] of Object.entries(handler.inputContract)) {
+      const value = step.inputs[field];
+
+      // Check required fields
+      if (contract.required && (value === undefined || value === null)) {
+        errors.push(
+          createTypedError({
+            code: 'VALIDATION.HANDLER_CONTRACT',
+            message: `Step "${step.id}": missing required input "${field}" for handler "${step.type}"`,
+            stepId: step.id,
+            retryable: false,
+            suggestedFixes: [
+              { type: 'ADD_INPUT', params: { field, stepId: step.id }, description: `Provide the "${field}" input` },
+            ],
+          }),
+        );
+        continue;
+      }
+
+      if (value === undefined || value === null) continue;
+
+      // Check type
+      const actualType = Array.isArray(value) ? 'array' : typeof value;
+      if (actualType !== contract.type) {
+        errors.push(
+          createTypedError({
+            code: 'VALIDATION.HANDLER_CONTRACT',
+            message: `Step "${step.id}": input "${field}" must be type "${contract.type}", got "${actualType}"`,
+            stepId: step.id,
+            retryable: false,
+          }),
+        );
+        continue;
+      }
+
+      // Check oneOf constraint
+      if (contract.oneOf && typeof value === 'string') {
+        const allowedValues = typeof contract.oneOf === 'function' ? contract.oneOf() : contract.oneOf;
+        if (!allowedValues.includes(value)) {
+          errors.push(
+            createTypedError({
+              code: 'VALIDATION.HANDLER_CONTRACT',
+              message: `Step "${step.id}": input "${field}" has invalid value "${value}". Allowed: ${allowedValues.join(', ')}`,
+              stepId: step.id,
+              retryable: false,
+              suggestedFixes: allowedValues.map((v) => ({
+                type: 'SET_INPUT_VALUE',
+                params: { field, value: v, stepId: step.id },
+                description: `Use "${v}" for ${field}`,
+              })),
+            }),
+          );
+        }
+      }
+    }
+  }
+
+  return errors;
+}
+
+/**
+ * Run async validation hooks on registered step handlers.
+ *
+ * Call this separately from compileWorkflow() when you need
+ * runtime pre-flight checks (e.g., probing model availability via HTTP).
+ * compileWorkflow() itself stays synchronous for backward compatibility.
+ */
+export async function validateHandlers(
+  compiledSteps: Record<string, CompiledStep>,
+): Promise<TypedError[]> {
+  const errors: TypedError[] = [];
+
+  for (const step of Object.values(compiledSteps)) {
+    const handler = getStepHandler(step.type);
+    if (!handler?.validate) continue;
+
+    const result = await handler.validate(step);
+    if (!result.valid) {
+      for (const errMsg of result.errors) {
+        errors.push(
+          createTypedError({
+            code: 'VALIDATION.HANDLER_PREFLIGHT',
+            message: `Step "${step.id}": ${errMsg}`,
+            stepId: step.id,
+            retryable: false,
+            suggestedFixes: [
+              { type: 'FIX_STEP_CONFIG', params: { stepId: step.id }, description: errMsg },
+            ],
+          }),
+        );
+      }
+    }
+  }
+
+  return errors;
 }
 
 /** Compute SHA-256 hash of a string. */
