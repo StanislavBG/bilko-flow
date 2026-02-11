@@ -18,49 +18,32 @@ export interface AuthenticatedRequest extends Request {
 }
 
 /**
- * Authentication middleware.
- * In production, this would validate JWT tokens or API keys.
- * For the reference implementation, it extracts identity from headers.
+ * Default identity middleware.
+ * No authentication required — auto-injects identity context from headers
+ * or falls back to defaults. This is a library exploration UI.
  */
-export function authMiddleware(store: Store) {
-  return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    // Account creation is a bootstrapping endpoint — no account exists yet.
-    if (req.method === 'POST' && req.path === '/accounts') {
-      next();
-      return;
-    }
-
-    const identityId = req.headers['x-identity-id'] as string;
+export function defaultIdentityMiddleware(store: Store) {
+  return async (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
+    const identityId = (req.headers['x-identity-id'] as string) || 'anonymous';
     const identityType = (req.headers['x-identity-type'] as string) || 'user';
     const accountId = req.headers['x-account-id'] as string || req.params.accountId || (req.body as any)?.accountId;
 
-    if (!identityId || !accountId) {
-      res.status(401).json(
-        apiError(
-          createTypedError({
-            code: 'AUTH.UNAUTHENTICATED',
-            message: 'Authentication required: provide x-identity-id and x-account-id headers',
-            retryable: false,
-          }),
-        ),
-      );
-      return;
+    if (identityId && accountId) {
+      req.identity = {
+        identityId,
+        identityType: identityType as 'user' | 'service-principal',
+        accountId,
+      };
+
+      // Load role bindings
+      req.roleBindings = await store.roleBindings.listByIdentity(identityId, accountId);
     }
-
-    req.identity = {
-      identityId,
-      identityType: identityType as 'user' | 'service-principal',
-      accountId,
-    };
-
-    // Load role bindings
-    req.roleBindings = await store.roleBindings.listByIdentity(identityId, accountId);
 
     // Extract scope from various sources
     const projectId = req.headers['x-project-id'] as string || req.params.projectId || (req.body as any)?.projectId;
     const environmentId = req.headers['x-environment-id'] as string || req.params.environmentId || (req.body as any)?.environmentId;
 
-    if (projectId && environmentId) {
+    if (accountId && projectId && environmentId) {
       req.scope = { accountId, projectId, environmentId };
     }
 
