@@ -89,6 +89,9 @@ export type StepType =
   | 'ai.generate-text'
   | 'ai.generate-image'
   | 'ai.generate-video'
+  | 'ai.generate-text-local'
+  | 'ai.summarize-local'
+  | 'ai.embed-local'
   | 'social.post'
   | 'notification.send'
   | 'custom';

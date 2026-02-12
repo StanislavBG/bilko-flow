@@ -40,6 +40,9 @@ const AI_STEP_TYPES = new Set([
   'ai.generate-text',
   'ai.generate-image',
   'ai.generate-video',
+  'ai.generate-text-local',
+  'ai.summarize-local',
+  'ai.embed-local',
 ]);
 
 /** Validate a workflow DSL document. */

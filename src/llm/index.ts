@@ -16,7 +16,15 @@ import { createTypedError, TypedError } from '../domain/errors';
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 /** Supported LLM provider identifiers. */
-export type LLMProvider = 'gemini' | 'openai' | 'claude' | 'custom';
+export type LLMProvider =
+  | 'gemini'
+  | 'openai'
+  | 'claude'
+  | 'ollama'
+  | 'vllm'
+  | 'tgi'
+  | 'local-ai'
+  | 'custom';
 
 /** Configuration for an LLM chat request. */
 export interface ChatOptions {
@@ -359,12 +367,38 @@ function getAdapter(provider: LLMProvider): LLMAdapter {
 
 // ─── Provider Support ───────────────────────────────────────────────────────
 
-/** Providers that support response_format: { type: "json_object" }. */
-const JSON_MODE_PROVIDERS = new Set<LLMProvider>(['gemini', 'openai']);
+/**
+ * Providers that support response_format: { type: "json_object" }.
+ *
+ * Ollama, vLLM, TGI, and LocalAI all support JSON-constrained output
+ * through grammar-based decoding or response_format parameters,
+ * addressing the critique's JSON constraint limitation.
+ */
+const JSON_MODE_PROVIDERS = new Set<LLMProvider>([
+  'gemini',
+  'openai',
+  'ollama',
+  'vllm',
+  'tgi',
+  'local-ai',
+]);
 
 /** Check if a provider supports native JSON mode. */
 export function supportsJsonMode(provider: LLMProvider): boolean {
   return JSON_MODE_PROVIDERS.has(provider);
+}
+
+/** Open-source providers that support local deployment. */
+export const OPEN_SOURCE_PROVIDERS = new Set<LLMProvider>([
+  'ollama',
+  'vllm',
+  'tgi',
+  'local-ai',
+]);
+
+/** Check if a provider is an open-source / local provider. */
+export function isOpenSourceProvider(provider: LLMProvider): boolean {
+  return OPEN_SOURCE_PROVIDERS.has(provider);
 }
 
 // ─── Core: chatJSON ─────────────────────────────────────────────────────────
@@ -490,3 +524,52 @@ export function llmProviderError(message: string, statusCode?: number): TypedErr
     ],
   });
 }
+
+// ─── Re-exports: Open-Source Model Support ──────────────────────────────────
+
+export {
+  ModelRegistry,
+  ModelEntry,
+  ModelCapabilities,
+  ModelResourceRequirements,
+  ModelHealthStatus,
+  ModelHealthResult,
+  ModelQuery,
+} from './model-registry';
+
+export {
+  ResourceConfig,
+  GpuConfig,
+  MemoryConfig,
+  BatchConfig,
+  QuantizationConfig,
+  ResourceValidationResult,
+  createResourceConfig,
+  validateResourceConfig,
+  estimateVramGb,
+} from './resource-config';
+
+export {
+  StreamChunk,
+  StreamOptions,
+  StreamAdapter,
+  registerStreamAdapter,
+  getStreamAdapter,
+  createLLMStream,
+  collectStream,
+  parseSSEStream,
+  createOllamaStreamAdapter,
+  createOpenAICompatibleStreamAdapter,
+} from './streaming';
+
+export {
+  registerOllamaAdapter,
+  registerVllmAdapter,
+  registerTgiAdapter,
+  registerLocalAIAdapter,
+  registerAllOpenSourceAdapters,
+  OLLAMA_DEFAULT_BASE_URL,
+  VLLM_DEFAULT_BASE_URL,
+  TGI_DEFAULT_BASE_URL,
+  LOCAL_AI_DEFAULT_BASE_URL,
+} from './adapters';
