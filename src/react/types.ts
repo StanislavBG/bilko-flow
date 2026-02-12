@@ -101,6 +101,109 @@ export interface FlowProgressStep {
 }
 
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * PARALLEL THREAD TYPES
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * These types model parallel execution threads within a flow. When a flow
+ * forks into concurrent branches (e.g. "search 3 APIs in parallel"), each
+ * branch is a ParallelThread with its own steps and lifecycle.
+ *
+ * ## FOR LLM / AGENT AUTHORS
+ *
+ * When building a flow that executes steps concurrently, declare a
+ * `parallelThreads` array on your FlowProgressProps. Each thread is
+ * independently tracked with its own status and step chain.
+ *
+ * Key constraints:
+ * - Maximum 5 threads are rendered simultaneously (service protection).
+ *   Additional threads appear as an overflow count indicator.
+ * - Completed threads can be collapsed (minimized) to save vertical space.
+ * - Thread IDs must be unique within the parallelThreads array.
+ *
+ * ## VISUAL BEHAVIOR
+ *
+ * When `parallelThreads` is provided and non-empty, FlowProgress renders:
+ * 1. The main step chain up to the fork point (steps before parallelism).
+ * 2. A "fork" indicator showing where threads diverge.
+ * 3. Stacked thread rows — each shows its own progress chain.
+ * 4. A "join" indicator when all threads complete and the flow continues.
+ *
+ * Completed threads auto-collapse after 2 seconds (configurable).
+ * The user can manually expand/collapse any thread.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+/**
+ * A single parallel execution thread within a flow.
+ *
+ * @example
+ * ```ts
+ * const thread: ParallelThread = {
+ *   id: 'search-google',
+ *   label: 'Google Search',
+ *   status: 'running',
+ *   steps: [
+ *     { id: 'g1', label: 'Query', status: 'complete', type: 'http.search' },
+ *     { id: 'g2', label: 'Parse', status: 'active', type: 'transform.map' },
+ *   ],
+ * };
+ * ```
+ */
+export interface ParallelThread {
+  /** Unique thread identifier. Must be unique within the parallelThreads array. */
+  id: string;
+  /** Human-readable thread label (e.g. "Google Search", "Thread 1"). */
+  label: string;
+  /** Overall thread status. */
+  status: 'pending' | 'running' | 'complete' | 'error';
+  /** Steps within this thread, displayed as a sub-chain. */
+  steps: FlowProgressStep[];
+  /** Optional activity description for this specific thread. */
+  activity?: string;
+  /** Optional error message when status is 'error'. */
+  error?: string;
+}
+
+/**
+ * Props for configuring parallel thread visualization behavior.
+ *
+ * @example
+ * ```tsx
+ * <FlowProgress
+ *   mode="expanded"
+ *   steps={mainSteps}
+ *   parallelThreads={threads}
+ *   parallelConfig={{
+ *     maxVisible: 5,
+ *     autoCollapseCompleted: true,
+ *     autoCollapseDelayMs: 2000,
+ *   }}
+ *   status="running"
+ * />
+ * ```
+ */
+export interface ParallelConfig {
+  /**
+   * Maximum number of threads rendered simultaneously.
+   * Threads beyond this limit show as "+N more" overflow indicator.
+   * Default: 5. Hard maximum: 5 (values > 5 are clamped).
+   */
+  maxVisible?: number;
+  /**
+   * Automatically collapse completed threads after a delay.
+   * Default: true.
+   */
+  autoCollapseCompleted?: boolean;
+  /**
+   * Delay in milliseconds before auto-collapsing completed threads.
+   * Only applies when `autoCollapseCompleted` is true.
+   * Default: 2000.
+   */
+  autoCollapseDelayMs?: number;
+}
+
+/**
  * Theme object for FlowProgress customization.
  *
  * Allows per-step-type colors and overrides for status colors.
@@ -149,7 +252,75 @@ export type FlowProgressStepRenderer = (
   },
 ) => React.ReactNode;
 
-/** FlowProgress component props */
+/**
+ * FlowProgress component props.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * AGENT / LLM AUTHORING GUIDE — FlowProgressProps
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * FlowProgress is the primary progress visualization for bilko-flow.
+ * It supports BOTH linear (sequential) and parallel (forked) execution.
+ *
+ * ## LINEAR FLOW (no parallelism)
+ * Pass `steps` only. Each step renders in sequence left-to-right.
+ *
+ * ```tsx
+ * <FlowProgress
+ *   mode="expanded"
+ *   steps={[
+ *     { id: '1', label: 'Fetch', status: 'complete', type: 'http.search' },
+ *     { id: '2', label: 'Parse', status: 'active', type: 'transform.map' },
+ *     { id: '3', label: 'Store', status: 'pending' },
+ *   ]}
+ *   status="running"
+ * />
+ * ```
+ *
+ * ## PARALLEL FLOW (forked threads)
+ * Pass `steps` (for the main chain) AND `parallelThreads` for the
+ * concurrent branches. The main chain renders first, then a fork
+ * indicator, then stacked parallel thread rows.
+ *
+ * ```tsx
+ * <FlowProgress
+ *   mode="expanded"
+ *   steps={[
+ *     { id: 'init', label: 'Initialize', status: 'complete' },
+ *   ]}
+ *   parallelThreads={[
+ *     {
+ *       id: 'google', label: 'Google API', status: 'running',
+ *       steps: [
+ *         { id: 'g1', label: 'Query', status: 'complete', type: 'http.search' },
+ *         { id: 'g2', label: 'Parse', status: 'active', type: 'transform.map' },
+ *       ],
+ *     },
+ *     {
+ *       id: 'bing', label: 'Bing API', status: 'running',
+ *       steps: [
+ *         { id: 'b1', label: 'Query', status: 'active', type: 'http.search' },
+ *       ],
+ *     },
+ *   ]}
+ *   parallelConfig={{ maxVisible: 5, autoCollapseCompleted: true }}
+ *   status="running"
+ *   label="Multi-Search Pipeline"
+ * />
+ * ```
+ *
+ * ## SERVICE PROTECTION
+ * - Maximum 5 parallel threads rendered (hard limit, clamped).
+ * - Overflow threads show as "+N more" indicator.
+ * - Completed threads auto-collapse to save space.
+ *
+ * ## CHOOSING THE RIGHT MODE
+ * - "compact"  → < 480px width. Parallel threads stack vertically as mini rows.
+ * - "expanded" → 480–900px. Each thread gets a bordered lane with step cards.
+ * - "full"     → > 900px. Full stepper lanes with numbered circles per thread.
+ * - "auto"     → Dynamic switching between expanded and compact.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 export interface FlowProgressProps {
   /**
    * Visual mode:
@@ -159,8 +330,30 @@ export interface FlowProgressProps {
    * - "auto": Dynamically selects "expanded" or "compact" based on container width
    */
   mode: 'full' | 'compact' | 'expanded' | 'auto';
-  /** Steps to display, in order */
+  /** Steps to display, in order (main chain before any fork point) */
   steps: FlowProgressStep[];
+  /**
+   * Parallel execution threads. When provided and non-empty, FlowProgress
+   * renders a fork indicator after the main steps, then stacked thread rows.
+   *
+   * Each thread has its own steps, status, and optional activity text.
+   * Maximum 5 threads are displayed (service protection); overflow shows
+   * as a "+N more" indicator.
+   *
+   * Completed threads can be collapsed/minimized by the user or
+   * automatically (see `parallelConfig`).
+   */
+  parallelThreads?: ParallelThread[];
+  /**
+   * Configuration for parallel thread visualization behavior.
+   * Controls max visible threads, auto-collapse, and timing.
+   */
+  parallelConfig?: ParallelConfig;
+  /**
+   * Called when user clicks to expand or collapse a parallel thread.
+   * Receives the thread ID and the new collapsed state.
+   */
+  onThreadToggle?: (threadId: string, collapsed: boolean) => void;
   /** Flow name/label (shown in "full" and "expanded" mode header) */
   label?: string;
   /** Overall flow status */

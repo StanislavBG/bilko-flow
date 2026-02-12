@@ -18,16 +18,21 @@
  *   - How tall is the available space? (inline widget ≈ 40–80px, card ≈ 120–200px, panel ≈ 400px+)
  *   - Is this embedded inside another component or standalone?
  *   - Will the user interact with it or is it display-only?
+ *   - Does the flow have parallel branches? (If yes, account for extra
+ *     vertical space — each thread lane adds ~40–60px in expanded mode.)
  *
  * STEP 2 — Pick the right component and mode:
  *
  *   FlowProgress — Choose mode based on available width:
  *     • "compact"   → Tight spaces (sidebars, inline widgets, < 480px width).
  *                     Minimal footprint: dot chain + labels.
+ *                     Parallel threads stack as minimal indented rows.
  *     • "expanded"  → Medium to wide containers (cards, panels, 480–900px).
  *                     Step cards with icons, labels, type info.
+ *                     Parallel threads render as bordered lanes with step cards.
  *     • "full"      → Wide dedicated areas (> 900px). Large numbered circles,
  *                     phase labels, progress track, header with counter.
+ *                     Parallel threads render as full lanes with numbered steps.
  *     • "auto"      → When the container width is dynamic or unknown.
  *                     Set `autoBreakpoint` to the px threshold that best fits
  *                     the layout (default 480). Switches between expanded/compact.
@@ -56,6 +61,11 @@
  *     to match where your layout actually switches from tight to spacious.
  *   - `stepRenderer` (FlowProgress): Provide a custom renderer when the
  *     default step visuals don't fit the host design system.
+ *   - `parallelThreads` (FlowProgress): Pass ParallelThread[] for flows
+ *     that fork into concurrent branches. Up to 5 threads rendered.
+ *   - `parallelConfig` (FlowProgress): Control maxVisible threads (≤5),
+ *     auto-collapse behavior, and collapse delay timing.
+ *   - `onThreadToggle` (FlowProgress): Callback for thread expand/collapse.
  *   - `className` (all components): Use for sizing constraints, margins,
  *     and overflow behavior in the host layout.
  *
@@ -67,6 +77,67 @@
  * The goal is to fill the available space meaningfully — not to cram a
  * full-mode stepper into a 300px sidebar or show a compact dot chain
  * in a 1200px hero area. Measure first, configure deliberately.
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * PARALLEL FLOW GUIDE (for agents authoring flows with concurrency)
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ * When your workflow forks into parallel branches, use the
+ * `parallelThreads` prop on FlowProgress. This is the ONLY way to
+ * visually represent concurrent execution in the progress widget.
+ *
+ * WHEN TO USE parallelThreads:
+ *   - The flow queries multiple APIs simultaneously
+ *   - The flow processes data through independent pipelines
+ *   - The flow runs the same operation with different parameters
+ *   - Any fan-out / fan-in (fork-join) execution pattern
+ *
+ * HOW TO STRUCTURE THE DATA:
+ *   1. `steps` = the MAIN chain (steps before the fork point)
+ *   2. `parallelThreads` = the concurrent branches
+ *   3. After all threads complete, continue adding steps to `steps`
+ *      (or track completion via `status`)
+ *
+ * SERVICE PROTECTION:
+ *   - Hard limit: 5 threads rendered (MAX_PARALLEL_THREADS constant)
+ *   - Excess threads shown as "+N more" overflow indicator
+ *   - Set `parallelConfig.maxVisible` to a lower number if needed
+ *   - Completed threads auto-collapse after 2 seconds by default
+ *
+ * EXAMPLE — 3-thread parallel search:
+ * ```tsx
+ * <FlowProgress
+ *   mode="expanded"
+ *   steps={[
+ *     { id: 'init', label: 'Initialize', status: 'complete' },
+ *   ]}
+ *   parallelThreads={[
+ *     {
+ *       id: 'google', label: 'Google', status: 'complete',
+ *       steps: [
+ *         { id: 'g1', label: 'Search', status: 'complete', type: 'http.search' },
+ *         { id: 'g2', label: 'Parse', status: 'complete', type: 'transform.map' },
+ *       ],
+ *     },
+ *     {
+ *       id: 'bing', label: 'Bing', status: 'running',
+ *       steps: [
+ *         { id: 'b1', label: 'Search', status: 'active', type: 'http.search' },
+ *       ],
+ *       activity: 'Waiting for response...',
+ *     },
+ *     {
+ *       id: 'ddg', label: 'DuckDuckGo', status: 'running',
+ *       steps: [
+ *         { id: 'd1', label: 'Search', status: 'active', type: 'http.search' },
+ *       ],
+ *     },
+ *   ]}
+ *   parallelConfig={{ maxVisible: 5, autoCollapseCompleted: true }}
+ *   status="running"
+ *   label="Multi-Search"
+ * />
+ * ```
  * ═══════════════════════════════════════════════════════════════════════
  */
 
@@ -81,6 +152,10 @@ export { CanvasBuilder } from './canvas-builder';
 export type { ParsedIntent, CanvasBuilderProps } from './canvas-builder';
 export { ComponentCatalog } from './component-catalog';
 export type { ComponentCatalogProps } from './component-catalog';
+
+// Parallel thread visualization
+export { ParallelThreadsSection, MAX_PARALLEL_THREADS } from './parallel-threads';
+export type { ParallelThreadsSectionProps } from './parallel-threads';
 
 // Mutation engine (pure functions, no React dependency)
 export {
@@ -150,4 +225,6 @@ export type {
   StepNodeProps,
   FlowTimelineProps,
   FlowCardProps,
+  ParallelThread,
+  ParallelConfig,
 } from './types';
