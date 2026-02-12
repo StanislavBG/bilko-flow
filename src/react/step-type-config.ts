@@ -8,7 +8,7 @@
  * and resolve them at render time.
  */
 
-import type { UIStepType, FlowStep } from './types';
+import type { UIStepType, FlowStep, FlowProgressTheme } from './types';
 
 /** Visual properties for a step type */
 export interface StepTypeVisuals {
@@ -129,6 +129,28 @@ export const LLM_SUBTYPE_CONFIG: Record<string, StepTypeVisuals> = {
 };
 
 /**
+ * Map domain step types (e.g. 'http.search', 'ai.summarize') to
+ * UI step types and their accent colors for theme defaults.
+ */
+export const DOMAIN_STEP_TYPE_MAP: Record<string, { uiType: UIStepType; accent: string }> = {
+  'http.search': { uiType: 'external-input', accent: 'bg-amber-500' },
+  'http.request': { uiType: 'external-input', accent: 'bg-amber-500' },
+  'transform.filter': { uiType: 'transform', accent: 'bg-orange-500' },
+  'transform.map': { uiType: 'transform', accent: 'bg-orange-500' },
+  'transform.reduce': { uiType: 'transform', accent: 'bg-orange-500' },
+  'ai.summarize': { uiType: 'llm', accent: 'bg-purple-500' },
+  'ai.generate-text': { uiType: 'llm', accent: 'bg-purple-500' },
+  'ai.generate-image': { uiType: 'llm', accent: 'bg-pink-500' },
+  'ai.generate-video': { uiType: 'llm', accent: 'bg-rose-500' },
+  'ai.generate-text-local': { uiType: 'llm', accent: 'bg-purple-400' },
+  'ai.summarize-local': { uiType: 'llm', accent: 'bg-purple-400' },
+  'ai.embed-local': { uiType: 'llm', accent: 'bg-violet-500' },
+  'social.post': { uiType: 'chat', accent: 'bg-emerald-500' },
+  'notification.send': { uiType: 'display', accent: 'bg-cyan-500' },
+  'custom': { uiType: 'llm', accent: 'bg-gray-500' },
+};
+
+/**
  * Get visual properties for a step, considering its type and subtype.
  *
  * For LLM steps with a known subtype (image, video), returns the
@@ -139,4 +161,64 @@ export function getStepVisuals(step: FlowStep): StepTypeVisuals {
     return LLM_SUBTYPE_CONFIG[step.subtype];
   }
   return STEP_TYPE_CONFIG[step.type] ?? STEP_TYPE_CONFIG.llm;
+}
+
+/**
+ * Default FlowProgress theme pre-configured for bilko domain step types.
+ *
+ * Step colors map both UI step types and domain step types to their
+ * accent bg classes. Status colors use standard green/red/gray palette.
+ */
+export const DEFAULT_FLOW_PROGRESS_THEME: FlowProgressTheme = {
+  stepColors: {
+    // UI step types
+    llm: 'bg-purple-500',
+    'user-input': 'bg-blue-500',
+    transform: 'bg-orange-500',
+    validate: 'bg-green-500',
+    display: 'bg-cyan-500',
+    chat: 'bg-emerald-500',
+    'external-input': 'bg-amber-500',
+    // Domain step types
+    'http.search': 'bg-amber-500',
+    'http.request': 'bg-amber-500',
+    'transform.filter': 'bg-orange-500',
+    'transform.map': 'bg-orange-500',
+    'transform.reduce': 'bg-orange-500',
+    'ai.summarize': 'bg-purple-500',
+    'ai.generate-text': 'bg-purple-500',
+    'ai.generate-image': 'bg-pink-500',
+    'ai.generate-video': 'bg-rose-500',
+    'ai.generate-text-local': 'bg-purple-400',
+    'ai.summarize-local': 'bg-purple-400',
+    'ai.embed-local': 'bg-violet-500',
+    'social.post': 'bg-emerald-500',
+    'notification.send': 'bg-cyan-500',
+    custom: 'bg-gray-500',
+  },
+  activeColor: 'bg-green-500',
+  completedColor: 'bg-green-500',
+  errorColor: 'bg-red-500',
+  pendingColor: 'bg-gray-700',
+  activeTextColor: 'text-green-400',
+  completedTextColor: 'text-gray-300',
+  errorTextColor: 'text-red-400',
+  pendingTextColor: 'text-gray-500',
+};
+
+/**
+ * Deep merge a partial theme override with the default theme.
+ * Handles nested stepColors merging.
+ */
+export function mergeTheme(override?: Partial<FlowProgressTheme>): FlowProgressTheme {
+  if (!override) return DEFAULT_FLOW_PROGRESS_THEME;
+
+  return {
+    ...DEFAULT_FLOW_PROGRESS_THEME,
+    ...override,
+    stepColors: {
+      ...DEFAULT_FLOW_PROGRESS_THEME.stepColors,
+      ...(override.stepColors ?? {}),
+    },
+  };
 }

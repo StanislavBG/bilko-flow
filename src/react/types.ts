@@ -92,7 +92,58 @@ export interface FlowProgressStep {
   id: string;
   label: string;
   status: 'pending' | 'active' | 'complete' | 'error';
+  /** Optional step type key for theme-aware coloring */
+  type?: string;
 }
+
+/**
+ * Theme object for FlowProgress customization.
+ *
+ * Allows per-step-type colors and overrides for status colors.
+ * All color values are Tailwind CSS classes (e.g. 'bg-purple-500').
+ */
+export interface FlowProgressTheme {
+  /** Map step type keys to Tailwind bg color classes */
+  stepColors: Record<string, string>;
+  /** Color for active/running step (Tailwind bg class) */
+  activeColor: string;
+  /** Color for completed step (Tailwind bg class) */
+  completedColor: string;
+  /** Color for error step (Tailwind bg class) */
+  errorColor: string;
+  /** Color for pending step (Tailwind bg class) */
+  pendingColor: string;
+  /** Text color for active step labels (Tailwind text class) */
+  activeTextColor: string;
+  /** Text color for completed step labels (Tailwind text class) */
+  completedTextColor: string;
+  /** Text color for error step labels (Tailwind text class) */
+  errorTextColor: string;
+  /** Text color for pending step labels (Tailwind text class) */
+  pendingTextColor: string;
+}
+
+/**
+ * Adapter function to convert external step data to FlowProgressStep.
+ * Enables the Context Adapter Pattern — FlowProgress can bridge
+ * external step data (not domain.Step) via this function.
+ */
+export type FlowProgressAdapter<T> = (externalStep: T, index: number) => FlowProgressStep;
+
+/**
+ * Custom step renderer for the External Integration Pattern.
+ * Receives the step data and computed visual props, returns a React node.
+ */
+export type FlowProgressStepRenderer = (
+  step: FlowProgressStep,
+  props: {
+    index: number;
+    isActive: boolean;
+    bgColor: string;
+    textColor: string;
+    mode: 'full' | 'compact';
+  },
+) => React.ReactNode;
 
 /** FlowProgress component props */
 export interface FlowProgressProps {
@@ -114,6 +165,12 @@ export interface FlowProgressProps {
   onStepClick?: (stepId: string) => void;
   /** Additional CSS classes on root element */
   className?: string;
+  /** Theme customization for step type-aware coloring */
+  theme?: Partial<FlowProgressTheme>;
+  /** Custom step renderer for External Integration Pattern */
+  stepRenderer?: FlowProgressStepRenderer;
+  /** Sliding window radius (default: 2) */
+  radius?: number;
 }
 
 /** FlowCanvas component props */
@@ -154,6 +211,8 @@ export interface FlowTimelineProps {
   onSelectStep: (stepId: string) => void;
   executions?: Record<string, StepExecution>;
   className?: string;
+  /** Theme override passed through to FlowProgress */
+  theme?: Partial<FlowProgressTheme>;
 }
 
 /** FlowCard component props */
