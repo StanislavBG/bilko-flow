@@ -11,5 +11,6 @@ export * from './errors';
 export * from './events';
 export * from './provenance';
 export * from './rbac';
+export * from './execution';
 export * from './run';
 export * from './workflow';
