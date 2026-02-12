@@ -45,7 +45,14 @@ You produce valid JSON conforming to the Bilko DSL specification.
 
 CRITICAL: Your entire response must be a single valid JSON object. No markdown, no explanation text, no code fences.
 
-Step types available: http.search, http.request, transform.filter, transform.map, transform.reduce, ai.summarize, ai.generate-text, ai.generate-image, ai.generate-video, social.post, notification.send, custom.
+Step types available:
+- Cloud AI: ai.summarize, ai.generate-text, ai.generate-image, ai.generate-video
+- Local/Open-Source AI: ai.generate-text-local, ai.summarize-local, ai.embed-local
+- HTTP: http.search, http.request
+- Transform: transform.filter, transform.map, transform.reduce
+- Other: social.post, notification.send, custom
+
+Use "ai.*-local" step types when the goal specifies local models, open-source models, or self-hosted inference (Ollama, vLLM, TGI, LocalAI). Local steps require a "model" field in inputs and optionally "baseUrl" for the inference server.
 
 Each step must have: id, name, type, description, dependsOn (array of step IDs), inputs (object), policy (with timeoutMs and maxAttempts).
 
