@@ -1,23 +1,39 @@
 /**
  * FlowProgress — THE first-class progress component.
  *
- * Renders in two visual modes controlled by the `mode` prop:
+ * ═══════════════════════════════════════════════════════════════════════════
+ * AGENT / LLM USAGE GUIDE
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * This component visualizes workflow execution progress in four modes:
  * - "full": Large numbered circles, phase labels, wide connectors, header,
  *           progress track, completed/total counter
  * - "compact": Small status icons with inline text labels, thin connectors
+ * - "expanded": Rectangular step cards with icon, label, type info
+ * - "auto": Dynamically switches between expanded/compact based on width
  *
- * Features:
+ * ## SEQUENTIAL FLOWS
+ * Pass `steps` prop with an array of FlowProgressStep objects.
+ *
+ * ## PARALLEL FLOWS (fork-join)
+ * Pass `parallelThreads` prop with an array of ParallelThread objects.
+ * Each thread has its own steps, status, and activity text. Up to 5
+ * threads are rendered simultaneously (service protection). Completed
+ * threads auto-collapse. See types.ts for ParallelThread interface.
+ *
+ * ## FEATURES
  * - Theme-first customization via FlowProgressTheme
- * - Type-aware coloring: step circles, connectors, and icons colored by step type
+ * - Type-aware coloring: step circles, connectors, icons by step type
  * - Sliding window: When step count > 2*radius+3, shows first, last,
  *   active ± radius, with interactive ellipsis for hidden ranges
  * - Adaptive labels: full/truncated/icon based on distance from active step
- * - Interactive ellipsis: click to open dropdown of hidden steps
+ * - Parallel thread lanes: fork/join indicators, collapsible threads
  * - Context Adapter Pattern: bridge external step data via adapter function
  * - External Integration Pattern: custom step renderers via stepRenderer prop
  *
  * Props-driven, no React context required. Uses Tailwind CSS utility classes
  * and lucide-react icons.
+ * ═══════════════════════════════════════════════════════════════════════════
  */
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
@@ -41,6 +57,7 @@ import {
 } from 'lucide-react';
 import type { FlowProgressProps, FlowProgressStep, FlowProgressTheme } from './types';
 import { mergeTheme } from './step-type-config';
+import { ParallelThreadsSection } from './parallel-threads';
 
 /** Default sliding window radius */
 const DEFAULT_RADIUS = 2;
@@ -324,7 +341,7 @@ function EllipsisDropdown({
 
 /** Full mode: large stepper banner with type-aware theming */
 function FullMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTheme }) {
-  const { steps, label, status, activity, onReset, onStepClick, stepRenderer, radius } = props;
+  const { steps, label, status, activity, onReset, onStepClick, stepRenderer, radius, parallelThreads, parallelConfig, onThreadToggle } = props;
   const theme = props.resolvedTheme;
   const windowRadius = radius ?? DEFAULT_RADIUS;
 
@@ -509,6 +526,18 @@ function FullMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTheme 
         })}
       </div>
 
+      {/* Parallel threads section */}
+      {parallelThreads && parallelThreads.length > 0 && (
+        <ParallelThreadsSection
+          threads={parallelThreads}
+          config={parallelConfig}
+          theme={theme}
+          mode="full"
+          onStepClick={onStepClick}
+          onThreadToggle={onThreadToggle}
+        />
+      )}
+
       {/* Segmented progress track — each segment colored by step type */}
       <div className="mt-3 h-1.5 w-full bg-gray-700 rounded-full overflow-hidden flex" data-testid="progress-bar">
         {segments.map((seg, i) => (
@@ -537,7 +566,7 @@ function FullMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTheme 
 
 /** Compact mode: inline dot chain with type-aware theming */
 function CompactMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTheme }) {
-  const { steps, activity, lastResult, onStepClick, stepRenderer, radius } = props;
+  const { steps, activity, lastResult, onStepClick, stepRenderer, radius, parallelThreads, parallelConfig, onThreadToggle } = props;
   const theme = props.resolvedTheme;
   const windowRadius = radius ?? DEFAULT_RADIUS;
 
@@ -679,6 +708,18 @@ function CompactMode(props: FlowProgressProps & { resolvedTheme: FlowProgressThe
         })}
       </div>
 
+      {/* Parallel threads section */}
+      {parallelThreads && parallelThreads.length > 0 && (
+        <ParallelThreadsSection
+          threads={parallelThreads}
+          config={parallelConfig}
+          theme={theme}
+          mode="compact"
+          onStepClick={onStepClick}
+          onThreadToggle={onThreadToggle}
+        />
+      )}
+
       {/* Enhanced activity text */}
       {activity && (
         <p className="mt-1 text-xs text-gray-400 truncate">
@@ -698,7 +739,7 @@ function CompactMode(props: FlowProgressProps & { resolvedTheme: FlowProgressThe
 
 /** Expanded mode: rectangular step cards that fill available space */
 function ExpandedMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTheme }) {
-  const { steps, label, status, activity, onReset, onStepClick, stepRenderer, radius } = props;
+  const { steps, label, status, activity, onReset, onStepClick, stepRenderer, radius, parallelThreads, parallelConfig, onThreadToggle } = props;
   const theme = props.resolvedTheme;
   const windowRadius = radius ?? DEFAULT_RADIUS;
 
@@ -866,6 +907,18 @@ function ExpandedMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
         })}
       </div>
 
+      {/* Parallel threads section */}
+      {parallelThreads && parallelThreads.length > 0 && (
+        <ParallelThreadsSection
+          threads={parallelThreads}
+          config={parallelConfig}
+          theme={theme}
+          mode="expanded"
+          onStepClick={onStepClick}
+          onThreadToggle={onThreadToggle}
+        />
+      )}
+
       {/* Segmented progress track */}
       <div className="mt-3 h-1.5 w-full bg-gray-700 rounded-full overflow-hidden flex" data-testid="progress-bar">
         {segments.map((seg, i) => (
@@ -893,23 +946,42 @@ function ExpandedMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
 }
 
 /**
- * FlowProgress — Multi-mode progress visualization with sliding window
- * and theme-first customization.
+ * FlowProgress — Multi-mode progress visualization with sliding window,
+ * theme-first customization, and parallel thread support.
  *
- * Supports four visual modes:
- * - "full": Large numbered circles, phase labels, wide connectors, header
- * - "compact": Small status icons with inline text labels, thin connectors
- * - "expanded": Rectangular step cards with icon, label, and type — fills available space
- * - "auto": Dynamically selects "expanded" or "compact" based on container width
+ * ═══════════════════════════════════════════════════════════════════════════
+ * AGENT / LLM AUTHORING GUIDE — FlowProgress Component
+ * ═══════════════════════════════════════════════════════════════════════════
  *
- * Supports the Context Adapter Pattern: pass an `adapter` function prop
- * to convert external step data to FlowProgressStep[]. This enables
- * FlowProgress to bridge data not shaped as domain.Step.
+ * This is the MAIN progress component. It supports:
  *
- * Supports the External Integration Pattern: pass a `stepRenderer` prop
- * to override default step rendering with custom React nodes.
+ * ## VISUAL MODES (choose based on container width)
+ * - "full": Large numbered circles, phase labels, wide connectors, header.
+ *   Best for wide containers (> 900px).
+ * - "compact": Small status icons with inline text labels, thin connectors.
+ *   Best for narrow containers (< 480px, sidebars).
+ * - "expanded": Rectangular step cards with icon, label, and type.
+ *   Best for medium containers (480–900px).
+ * - "auto": Dynamically selects "expanded" or "compact" based on container
+ *   width. Use when container size is unknown or responsive.
  *
- * @example
+ * ## LINEAR FLOW (sequential steps only)
+ * Pass `steps` array. Steps render left-to-right with sliding window
+ * for long flows (> 2*radius+3 steps).
+ *
+ * ## PARALLEL FLOW (concurrent branches)
+ * Pass `steps` (main chain) AND `parallelThreads` (concurrent branches).
+ * Up to 5 threads rendered simultaneously (service protection).
+ * Completed threads auto-collapse. See ParallelThread type for details.
+ *
+ * ## PATTERNS
+ * - Context Adapter Pattern: `adaptSteps()` helper converts external data.
+ * - External Integration Pattern: `stepRenderer` prop for custom rendering.
+ * - Theme-First Customization: `mergeTheme()` for partial overrides.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * @example Linear flow
  * ```tsx
  * <FlowProgress
  *   mode="auto"
@@ -921,7 +993,41 @@ function ExpandedMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
  *   label="Content Pipeline"
  *   status="running"
  *   activity="Writing article draft..."
- *   autoBreakpoint={600}
+ * />
+ * ```
+ *
+ * @example Parallel flow with 3 threads
+ * ```tsx
+ * <FlowProgress
+ *   mode="expanded"
+ *   steps={[
+ *     { id: "init", label: "Initialize", status: "complete" },
+ *   ]}
+ *   parallelThreads={[
+ *     {
+ *       id: "google", label: "Google Search", status: "running",
+ *       steps: [
+ *         { id: "g1", label: "Query", status: "complete", type: "http.search" },
+ *         { id: "g2", label: "Parse", status: "active", type: "transform.map" },
+ *       ],
+ *     },
+ *     {
+ *       id: "bing", label: "Bing Search", status: "complete",
+ *       steps: [
+ *         { id: "b1", label: "Query", status: "complete", type: "http.search" },
+ *         { id: "b2", label: "Parse", status: "complete", type: "transform.map" },
+ *       ],
+ *     },
+ *     {
+ *       id: "arxiv", label: "ArXiv Search", status: "running",
+ *       steps: [
+ *         { id: "a1", label: "Query", status: "active", type: "http.search" },
+ *       ],
+ *     },
+ *   ]}
+ *   parallelConfig={{ maxVisible: 5, autoCollapseCompleted: true }}
+ *   status="running"
+ *   label="Multi-Source Research"
  * />
  * ```
  */
