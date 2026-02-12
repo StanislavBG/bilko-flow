@@ -63,11 +63,11 @@ export function FlowTimeline({
   );
 
   return (
-    <div className={`flex flex-col gap-2 ${className ?? ''}`}>
-      <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wider px-3 py-2">
+    <div className={`flex flex-col gap-2 min-w-0 overflow-hidden ${className ?? ''}`}>
+      <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wider px-3 py-2 truncate">
         Steps ({flow.steps.length})
       </h3>
-      <div className="px-2">
+      <div className="px-2 min-w-0 overflow-hidden">
         <FlowProgress
           mode="compact"
           steps={progressSteps}
