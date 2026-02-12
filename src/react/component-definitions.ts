@@ -3,6 +3,33 @@
  *
  * Defines the shape of component metadata used by ComponentCatalog
  * and any programmatic tooling that needs to describe step types.
+ *
+ * ─────────────────────────────────────────────────────────────────────
+ * NOTE TO AGENTS: REASON ABOUT LAYOUT BEFORE SELECTING COMPONENTS
+ * ─────────────────────────────────────────────────────────────────────
+ *
+ * Each component definition below has multiple configurable fields
+ * (inputs, outputs, contract rules, use cases). When you compose a
+ * flow that includes these step types, the visual weight of each step
+ * node depends on which component you choose AND the rendering area
+ * available in the host UI.
+ *
+ * Before wiring up steps:
+ *  1. Determine the rendering context — Will these steps appear in a
+ *     FlowCanvas (large 2D area), FlowProgress (horizontal stepper),
+ *     ComponentCatalog (browsable list), or StepDetail (inspection pane)?
+ *  2. Match step density to area — A 5-step flow in a wide panel can
+ *     show full labels and icons; the same flow in a 280px sidebar
+ *     should use compact mode with truncated labels and radius=1.
+ *  3. Use `contractRules` as constraints, not suggestions — If a
+ *     component definition lists contract rules, enforce them in the
+ *     flow definition. Violating them causes runtime errors or
+ *     degraded UX (e.g., an empty prompt on an LLM step shows a
+ *     blank card to the user).
+ *  4. Prefer fewer, well-configured steps over many under-configured
+ *     ones — Each additional step adds visual and cognitive load.
+ *     Consolidate where the domain allows it.
+ * ─────────────────────────────────────────────────────────────────────
  */
 
 import type { UIStepType } from './types';
