@@ -6,7 +6,7 @@
  */
 
 // Components
-export { FlowProgress } from './flow-progress';
+export { FlowProgress, adaptSteps } from './flow-progress';
 export { FlowCanvas } from './flow-canvas';
 export { StepNode } from './step-node';
 export { StepDetail } from './step-detail';
@@ -46,7 +46,14 @@ export { computeLayout, NODE_W, NODE_H, COL_GAP, ROW_GAP, PADDING } from './layo
 export type { NodeLayout, EdgeLayout, DAGLayout } from './layout';
 
 // Step type configuration
-export { STEP_TYPE_CONFIG, LLM_SUBTYPE_CONFIG, getStepVisuals } from './step-type-config';
+export {
+  STEP_TYPE_CONFIG,
+  LLM_SUBTYPE_CONFIG,
+  DOMAIN_STEP_TYPE_MAP,
+  DEFAULT_FLOW_PROGRESS_THEME,
+  getStepVisuals,
+  mergeTheme,
+} from './step-type-config';
 export type { StepTypeVisuals } from './step-type-config';
 
 // Execution hooks
@@ -70,6 +77,9 @@ export type {
   StepExecution,
   FlowProgressStep,
   FlowProgressProps,
+  FlowProgressTheme,
+  FlowProgressAdapter,
+  FlowProgressStepRenderer,
   FlowCanvasProps,
   StepDetailProps,
   StepNodeProps,

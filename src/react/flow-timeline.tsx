@@ -7,7 +7,7 @@
  */
 
 import React, { useMemo } from 'react';
-import type { FlowTimelineProps, FlowProgressStep } from './types';
+import type { FlowTimelineProps, FlowProgressStep, FlowProgressTheme } from './types';
 import { FlowProgress } from './flow-progress';
 
 /** Map StepExecution status to FlowProgressStep status */
@@ -49,6 +49,7 @@ export function FlowTimeline({
   onSelectStep,
   executions,
   className,
+  theme,
 }: FlowTimelineProps) {
   const progressSteps: FlowProgressStep[] = useMemo(
     () =>
@@ -56,6 +57,7 @@ export function FlowTimeline({
         id: step.id,
         label: step.name,
         status: toProgressStatus(step.id, executions),
+        type: step.type,
       })),
     [flow.steps, executions],
   );
@@ -71,6 +73,7 @@ export function FlowTimeline({
           steps={progressSteps}
           label={flow.name}
           onStepClick={onSelectStep}
+          theme={theme}
         />
       </div>
     </div>

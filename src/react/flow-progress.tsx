@@ -7,10 +7,14 @@
  * - "compact": Small status icons with inline text labels, thin connectors
  *
  * Features:
+ * - Theme-first customization via FlowProgressTheme
+ * - Type-aware coloring: step circles, connectors, and icons colored by step type
  * - Sliding window: When step count > 2*radius+3, shows first, last,
  *   active ± radius, with interactive ellipsis for hidden ranges
  * - Adaptive labels: full/truncated/icon based on distance from active step
  * - Interactive ellipsis: click to open dropdown of hidden steps
+ * - Context Adapter Pattern: bridge external step data via adapter function
+ * - External Integration Pattern: custom step renderers via stepRenderer prop
  *
  * Props-driven, no React context required. Uses Tailwind CSS utility classes
  * and lucide-react icons.
@@ -25,8 +29,17 @@ import {
   AlertCircle,
   XCircle,
   MoreHorizontal,
+  Search,
+  Globe,
+  ArrowRightLeft,
+  ShieldCheck,
+  Monitor,
+  MessageSquare,
+  PlugZap,
+  Brain,
 } from 'lucide-react';
-import type { FlowProgressProps, FlowProgressStep } from './types';
+import type { FlowProgressProps, FlowProgressStep, FlowProgressTheme } from './types';
+import { mergeTheme } from './step-type-config';
 
 /** Default sliding window radius */
 const DEFAULT_RADIUS = 2;
@@ -36,15 +49,104 @@ function needsWindow(count: number, radius: number): boolean {
   return count > 2 * radius + 3;
 }
 
-/** Status dot color for the header */
-function statusDotClass(status: FlowProgressProps['status']): string {
+/** Get the resolved background color for a step, considering theme and type */
+function resolveStepBg(
+  step: FlowProgressStep,
+  theme: FlowProgressTheme,
+): string {
+  switch (step.status) {
+    case 'complete':
+      return step.type && theme.stepColors[step.type]
+        ? theme.stepColors[step.type]
+        : theme.completedColor;
+    case 'active':
+      return step.type && theme.stepColors[step.type]
+        ? theme.stepColors[step.type]
+        : theme.activeColor;
+    case 'error':
+      return theme.errorColor;
+    default:
+      return theme.pendingColor;
+  }
+}
+
+/** Get the text color for a step label from theme */
+function resolveStepTextColor(
+  step: FlowProgressStep,
+  theme: FlowProgressTheme,
+  isBold: boolean,
+): string {
+  switch (step.status) {
+    case 'active':
+      return isBold ? 'text-white font-bold' : theme.activeTextColor + ' font-medium';
+    case 'complete':
+      return theme.completedTextColor;
+    case 'error':
+      return theme.errorTextColor;
+    default:
+      return theme.pendingTextColor;
+  }
+}
+
+/** Get connector bar color: uses step type color for completed steps */
+function resolveConnectorColor(
+  step: FlowProgressStep,
+  theme: FlowProgressTheme,
+): string {
+  if (step.status === 'complete') {
+    return step.type && theme.stepColors[step.type]
+      ? theme.stepColors[step.type]
+      : theme.completedColor;
+  }
+  return theme.pendingColor;
+}
+
+/** Map step type string to a lucide-react icon for compact mode */
+function getTypeIcon(type?: string): React.ReactNode {
+  switch (type) {
+    case 'llm':
+    case 'ai.summarize':
+    case 'ai.generate-text':
+    case 'ai.generate-text-local':
+    case 'ai.summarize-local':
+    case 'ai.embed-local':
+      return <Brain size={14} />;
+    case 'ai.generate-image':
+    case 'ai.generate-video':
+      return <Brain size={14} />;
+    case 'transform':
+    case 'transform.filter':
+    case 'transform.map':
+    case 'transform.reduce':
+      return <ArrowRightLeft size={14} />;
+    case 'validate':
+      return <ShieldCheck size={14} />;
+    case 'display':
+    case 'notification.send':
+      return <Monitor size={14} />;
+    case 'chat':
+    case 'social.post':
+      return <MessageSquare size={14} />;
+    case 'external-input':
+    case 'http.search':
+    case 'http.request':
+      return <Globe size={14} />;
+    case 'user-input':
+      return <PlugZap size={14} />;
+    default:
+      return null;
+  }
+}
+
+/** Status dot color for the header — uses theme */
+function statusDotClass(status: FlowProgressProps['status'], theme: FlowProgressTheme): string {
   switch (status) {
     case 'running':
-      return 'bg-green-500 animate-pulse';
+      return `${theme.activeColor} animate-pulse`;
     case 'complete':
-      return 'bg-green-500';
+      return theme.completedColor;
     case 'error':
-      return 'bg-red-500';
+      return theme.errorColor;
     default:
       return 'bg-gray-400';
   }
@@ -137,10 +239,12 @@ function EllipsisDropdown({
   hiddenSteps,
   onStepClick,
   mode,
+  theme,
 }: {
   hiddenSteps: Array<{ index: number; step: FlowProgressStep }>;
   onStepClick?: (stepId: string) => void;
   mode: 'full' | 'compact';
+  theme: FlowProgressTheme;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -177,35 +281,48 @@ function EllipsisDropdown({
         <div
           className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-50 bg-gray-800 border border-gray-700 rounded-lg shadow-lg py-1 min-w-[160px] max-h-[200px] overflow-y-auto"
         >
-          {hiddenSteps.map(({ index, step }) => (
-            <button
-              key={step.id}
-              onClick={() => {
-                onStepClick?.(step.id);
-                setOpen(false);
-              }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-700 transition-colors text-left"
-            >
-              <span className="text-gray-500 text-xs w-5 text-right flex-shrink-0">{index + 1}</span>
-              {step.status === 'complete' ? (
-                <CheckCircle2 size={12} className="text-green-500 flex-shrink-0" />
-              ) : step.status === 'error' ? (
-                <XCircle size={12} className="text-red-500 flex-shrink-0" />
-              ) : (
-                <Circle size={12} className="text-gray-500 flex-shrink-0" />
-              )}
-              <span className="text-gray-300 truncate">{step.label}</span>
-            </button>
-          ))}
+          {hiddenSteps.map(({ index, step }) => {
+            const dotColor = step.status === 'complete'
+              ? resolveStepBg(step, theme)
+              : step.status === 'error'
+                ? theme.errorColor
+                : theme.pendingColor;
+
+            return (
+              <button
+                key={step.id}
+                onClick={() => {
+                  onStepClick?.(step.id);
+                  setOpen(false);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-700 transition-colors text-left"
+              >
+                <span className="text-gray-500 text-xs w-5 text-right flex-shrink-0">{index + 1}</span>
+                {step.status === 'complete' ? (
+                  <CheckCircle2 size={12} className="text-green-500 flex-shrink-0" />
+                ) : step.status === 'error' ? (
+                  <XCircle size={12} className="text-red-500 flex-shrink-0" />
+                ) : (
+                  <Circle size={12} className="text-gray-500 flex-shrink-0" />
+                )}
+                <span className="text-gray-300 truncate">{step.label}</span>
+                {step.type && (
+                  <span className={`w-2 h-2 rounded-full ${dotColor} flex-shrink-0 ml-auto`} />
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-/** Full mode: large stepper banner */
-function FullMode(props: FlowProgressProps) {
-  const { steps, label, status, activity, onReset, onStepClick } = props;
+/** Full mode: large stepper banner with type-aware theming */
+function FullMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTheme }) {
+  const { steps, label, status, activity, onReset, onStepClick, stepRenderer, radius } = props;
+  const theme = props.resolvedTheme;
+  const windowRadius = radius ?? DEFAULT_RADIUS;
 
   const activeStep = steps.find(s => s.status === 'active');
   const activeIdx = steps.findIndex(s => s.status === 'active');
@@ -213,8 +330,8 @@ function FullMode(props: FlowProgressProps) {
   const sLabel = statusLabel(status, steps);
 
   const windowItems = useMemo(
-    () => computeWindow(steps, DEFAULT_RADIUS),
-    [steps],
+    () => computeWindow(steps, windowRadius),
+    [steps, windowRadius],
   );
 
   // Progress percentage
@@ -222,12 +339,24 @@ function FullMode(props: FlowProgressProps) {
     ? Math.round((completedCount / steps.length) * 100)
     : 0;
 
+  // Build segmented progress bar data
+  const segments = useMemo(() => {
+    if (steps.length === 0) return [];
+    return steps.map(step => ({
+      color: resolveStepBg(step, theme),
+      status: step.status,
+    }));
+  }, [steps, theme]);
+
   return (
     <div className="w-full rounded-lg border border-gray-700 bg-gray-900 p-4">
       {/* Header row */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <span className={`w-2.5 h-2.5 rounded-full ${statusDotClass(status)}`} />
+          <span
+            className={`w-2.5 h-2.5 rounded-full ${statusDotClass(status, theme)}`}
+            data-testid="status-dot"
+          />
           {label && (
             <span className="font-semibold text-white text-sm">{label}</span>
           )}
@@ -261,6 +390,7 @@ function FullMode(props: FlowProgressProps) {
                     hiddenSteps={item.hiddenSteps}
                     onStepClick={onStepClick}
                     mode="full"
+                    theme={theme}
                   />
                 </div>
                 {i < windowItems.length - 1 && (
@@ -272,6 +402,35 @@ function FullMode(props: FlowProgressProps) {
 
           const { step, index } = item;
           const labelMode = getLabelMode(index, activeIdx >= 0 ? activeIdx : 0);
+          const bgColor = resolveStepBg(step, theme);
+          const textColor = resolveStepTextColor(step, theme, labelMode === 'full-bold');
+
+          // Custom step renderer
+          if (stepRenderer) {
+            const rendered = stepRenderer(step, {
+              index,
+              isActive: step.status === 'active',
+              bgColor,
+              textColor,
+              mode: 'full',
+            });
+            if (rendered) {
+              return (
+                <React.Fragment key={step.id}>
+                  {rendered}
+                  {i < windowItems.length - 1 && (
+                    <div
+                      className={`
+                        h-1 flex-1 min-w-[16px] max-w-[40px] rounded-full mx-1 mt-[-20px]
+                        transition-colors duration-300
+                        ${resolveConnectorColor(step, theme)}
+                      `}
+                    />
+                  )}
+                </React.Fragment>
+              );
+            }
+          }
 
           let displayLabel: string;
           switch (labelMode) {
@@ -289,7 +448,7 @@ function FullMode(props: FlowProgressProps) {
 
           return (
             <React.Fragment key={step.id}>
-              {/* Step circle */}
+              {/* Step circle — type-aware coloring */}
               <button
                 className="flex flex-col items-center group"
                 onClick={() => onStepClick?.(step.id)}
@@ -299,15 +458,15 @@ function FullMode(props: FlowProgressProps) {
                   className={`
                     w-9 h-9 rounded-full flex items-center justify-center text-sm font-medium
                     transition-all duration-300
-                    ${step.status === 'complete'
-                      ? 'bg-green-500 text-white'
-                      : step.status === 'active'
-                        ? 'bg-green-500 text-white ring-4 ring-green-500/30 scale-110'
-                        : step.status === 'error'
-                          ? 'bg-red-500 text-white'
-                          : 'bg-gray-700 text-gray-400'
+                    ${bgColor} text-white
+                    ${step.status === 'active'
+                      ? `ring-4 ring-opacity-30 scale-110`
+                      : ''
                     }
                   `}
+                  style={step.status === 'active' ? {
+                    boxShadow: `0 0 0 4px rgba(34, 197, 94, 0.3)`,
+                  } : undefined}
                 >
                   {step.status === 'complete' ? (
                     <CheckCircle2 size={18} />
@@ -321,14 +480,7 @@ function FullMode(props: FlowProgressProps) {
                   <span
                     className={`
                       mt-1.5 text-xs text-center max-w-[80px] truncate
-                      ${labelMode === 'full-bold'
-                        ? 'text-green-400 font-bold'
-                        : step.status === 'active'
-                          ? 'text-green-400 font-medium'
-                          : step.status === 'complete'
-                            ? 'text-gray-300'
-                            : 'text-gray-500'
-                      }
+                      ${textColor}
                     `}
                   >
                     {displayLabel}
@@ -338,13 +490,13 @@ function FullMode(props: FlowProgressProps) {
                 )}
               </button>
 
-              {/* Connector bar */}
+              {/* Connector bar — type-aware coloring */}
               {i < windowItems.length - 1 && (
                 <div
                   className={`
                     h-1 flex-1 min-w-[16px] max-w-[40px] rounded-full mx-1 mt-[-20px]
                     transition-colors duration-300
-                    ${step.status === 'complete' ? 'bg-green-500' : 'bg-gray-700'}
+                    ${resolveConnectorColor(step, theme)}
                   `}
                 />
               )}
@@ -353,12 +505,20 @@ function FullMode(props: FlowProgressProps) {
         })}
       </div>
 
-      {/* Progress track */}
-      <div className="mt-3 h-1 w-full bg-gray-700 rounded-full overflow-hidden">
-        <div
-          className="h-full bg-green-500 rounded-full transition-all duration-500"
-          style={{ width: `${progressPct}%` }}
-        />
+      {/* Segmented progress track — each segment colored by step type */}
+      <div className="mt-3 h-1.5 w-full bg-gray-700 rounded-full overflow-hidden flex" data-testid="progress-bar">
+        {segments.map((seg, i) => (
+          <div
+            key={i}
+            className={`
+              h-full transition-all duration-500
+              ${seg.status === 'pending' ? 'bg-gray-700' : seg.color}
+              ${i === 0 ? 'rounded-l-full' : ''}
+              ${i === segments.length - 1 ? 'rounded-r-full' : ''}
+            `}
+            style={{ width: `${100 / segments.length}%` }}
+          />
+        ))}
       </div>
 
       {/* Activity text */}
@@ -371,19 +531,38 @@ function FullMode(props: FlowProgressProps) {
   );
 }
 
-/** Compact mode: inline dot chain */
-function CompactMode(props: FlowProgressProps) {
-  const { steps, activity, lastResult, onStepClick } = props;
+/** Compact mode: inline dot chain with type-aware theming */
+function CompactMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTheme }) {
+  const { steps, activity, lastResult, onStepClick, stepRenderer, radius } = props;
+  const theme = props.resolvedTheme;
+  const windowRadius = radius ?? DEFAULT_RADIUS;
 
   const activeIdx = steps.findIndex(s => s.status === 'active');
+  const completedCount = steps.filter(s => s.status === 'complete').length;
 
   const windowItems = useMemo(
-    () => computeWindow(steps, DEFAULT_RADIUS),
-    [steps],
+    () => computeWindow(steps, windowRadius),
+    [steps, windowRadius],
   );
 
   return (
     <div className="w-full">
+      {/* Progress counter */}
+      {steps.length > 0 && (
+        <div className="flex items-center gap-2 mb-1" data-testid="progress-counter">
+          <span className="text-xs text-gray-400">
+            {completedCount} of {steps.length}
+          </span>
+          {/* Mini progress bar */}
+          <div className="flex-1 h-0.5 bg-gray-700 rounded-full overflow-hidden max-w-[80px]">
+            <div
+              className={`h-full rounded-full transition-all duration-300 ${theme.completedColor}`}
+              style={{ width: `${steps.length > 0 ? (completedCount / steps.length) * 100 : 0}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Step chain */}
       <div className="flex flex-wrap items-center gap-1">
         {windowItems.map((item, i) => {
@@ -394,6 +573,7 @@ function CompactMode(props: FlowProgressProps) {
                   hiddenSteps={item.hiddenSteps}
                   onStepClick={onStepClick}
                   mode="compact"
+                  theme={theme}
                 />
                 {i < windowItems.length - 1 && (
                   <div className="h-px w-4 flex-shrink-0 bg-gray-600" />
@@ -404,6 +584,31 @@ function CompactMode(props: FlowProgressProps) {
 
           const { step, index } = item;
           const labelMode = getLabelMode(index, activeIdx >= 0 ? activeIdx : 0);
+          const bgColor = resolveStepBg(step, theme);
+          const textColor = resolveStepTextColor(step, theme, labelMode === 'full-bold');
+
+          // Custom step renderer
+          if (stepRenderer) {
+            const rendered = stepRenderer(step, {
+              index,
+              isActive: step.status === 'active',
+              bgColor,
+              textColor,
+              mode: 'compact',
+            });
+            if (rendered) {
+              return (
+                <React.Fragment key={step.id}>
+                  {rendered}
+                  {i < windowItems.length - 1 && (
+                    <div
+                      className={`h-0.5 w-4 flex-shrink-0 ${resolveConnectorColor(step, theme)}`}
+                    />
+                  )}
+                </React.Fragment>
+              );
+            }
+          }
 
           let displayLabel: string | null;
           switch (labelMode) {
@@ -419,48 +624,49 @@ function CompactMode(props: FlowProgressProps) {
               break;
           }
 
+          // Type-aware icon for compact mode
+          const typeIcon = step.type ? getTypeIcon(step.type) : null;
+
           return (
             <React.Fragment key={step.id}>
               <button
                 className="flex items-center gap-1 group"
                 onClick={() => onStepClick?.(step.id)}
               >
-                {/* Status icon */}
+                {/* Status icon — type-aware in compact mode */}
                 {step.status === 'complete' ? (
                   <CheckCircle2 size={14} className="text-green-500 flex-shrink-0" />
                 ) : step.status === 'active' ? (
-                  <Loader2 size={14} className="text-blue-400 animate-spin flex-shrink-0" />
+                  typeIcon ? (
+                    <span className="text-blue-400 flex-shrink-0 animate-pulse">
+                      {typeIcon}
+                    </span>
+                  ) : (
+                    <Loader2 size={14} className="text-blue-400 animate-spin flex-shrink-0" />
+                  )
                 ) : step.status === 'error' ? (
                   <XCircle size={14} className="text-red-500 flex-shrink-0" />
+                ) : typeIcon ? (
+                  <span className="text-gray-500 flex-shrink-0">{typeIcon}</span>
                 ) : (
                   <Circle size={14} className="text-gray-500 flex-shrink-0" />
                 )}
                 {/* Label */}
                 {displayLabel !== null && (
                   <span
-                    className={`
-                      text-xs whitespace-nowrap
-                      ${labelMode === 'full-bold'
-                        ? 'text-white font-bold'
-                        : step.status === 'active'
-                          ? 'text-white font-bold'
-                          : step.status === 'complete'
-                            ? 'text-gray-300'
-                            : 'text-gray-500'
-                      }
-                    `}
+                    className={`text-xs whitespace-nowrap ${textColor}`}
                   >
                     {displayLabel}
                   </span>
                 )}
               </button>
 
-              {/* Connector line */}
+              {/* Connector line — type-aware color */}
               {i < windowItems.length - 1 && (
                 <div
                   className={`
-                    h-px w-4 flex-shrink-0
-                    ${step.status === 'complete' ? 'bg-green-500' : 'bg-gray-600'}
+                    h-0.5 w-4 flex-shrink-0
+                    ${resolveConnectorColor(step, theme)}
                   `}
                 />
               )}
@@ -469,7 +675,7 @@ function CompactMode(props: FlowProgressProps) {
         })}
       </div>
 
-      {/* Activity text */}
+      {/* Enhanced activity text */}
       {activity && (
         <p className="mt-1 text-xs text-gray-400 truncate">
           {activity}
@@ -487,30 +693,69 @@ function CompactMode(props: FlowProgressProps) {
 }
 
 /**
- * FlowProgress — Dual-mode progress visualization with sliding window.
+ * FlowProgress — Dual-mode progress visualization with sliding window
+ * and theme-first customization.
+ *
+ * Supports the Context Adapter Pattern: pass an `adapter` function prop
+ * to convert external step data to FlowProgressStep[]. This enables
+ * FlowProgress to bridge data not shaped as domain.Step.
+ *
+ * Supports the External Integration Pattern: pass a `stepRenderer` prop
+ * to override default step rendering with custom React nodes.
  *
  * @example
  * ```tsx
  * <FlowProgress
  *   mode="full"
  *   steps={[
- *     { id: "1", label: "Discover", status: "complete" },
- *     { id: "2", label: "Write", status: "active" },
- *     { id: "3", label: "Publish", status: "pending" },
+ *     { id: "1", label: "Discover", status: "complete", type: "http.search" },
+ *     { id: "2", label: "Write", status: "active", type: "ai.generate-text" },
+ *     { id: "3", label: "Publish", status: "pending", type: "social.post" },
  *   ]}
  *   label="Content Pipeline"
  *   status="running"
  *   activity="Writing article draft..."
+ *   theme={{ stepColors: { 'ai.generate-text': 'bg-indigo-500' } }}
  *   onStepClick={(id) => console.log("Step clicked:", id)}
  * />
  * ```
  */
 export function FlowProgress(props: FlowProgressProps) {
-  const { mode, className } = props;
+  const { mode, className, theme } = props;
+
+  const resolvedTheme = useMemo(() => mergeTheme(theme), [theme]);
 
   return (
     <div className={className}>
-      {mode === 'full' ? <FullMode {...props} /> : <CompactMode {...props} />}
+      {mode === 'full'
+        ? <FullMode {...props} resolvedTheme={resolvedTheme} />
+        : <CompactMode {...props} resolvedTheme={resolvedTheme} />
+      }
     </div>
   );
+}
+
+/**
+ * adaptSteps — Context Adapter Pattern helper.
+ *
+ * Converts an array of external data to FlowProgressStep[] using
+ * the provided adapter function. Use this when you have non-domain
+ * step data that needs to render in FlowProgress.
+ *
+ * @example
+ * ```tsx
+ * const steps = adaptSteps(externalSteps, (ext, i) => ({
+ *   id: ext.uid,
+ *   label: ext.title,
+ *   status: ext.done ? 'complete' : 'pending',
+ *   type: ext.category,
+ * }));
+ * <FlowProgress mode="compact" steps={steps} />
+ * ```
+ */
+export function adaptSteps<T>(
+  data: T[],
+  adapter: (item: T, index: number) => FlowProgressStep,
+): FlowProgressStep[] {
+  return data.map(adapter);
 }
