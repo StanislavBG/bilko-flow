@@ -26,6 +26,10 @@ export interface FlowStepExecution {
   output?: unknown;
   error?: string;
   attempts?: number;
+  /** Size of the step output in bytes (for payload growth tracking). */
+  outputSizeBytes?: number;
+  /** Structural shape of the raw API response (diagnostic metadata, never actual values). */
+  rawResponseShape?: import('./response-shape').RawResponseShape;
 }
 
 /**

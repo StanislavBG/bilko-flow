@@ -80,6 +80,10 @@ export interface StepExecution {
   output?: unknown;
   error?: string;
   rawResponse?: string;
+  /** Size of the step output in bytes (for payload growth tracking). */
+  outputSizeBytes?: number;
+  /** Structural shape of the raw API response (diagnostic metadata, never actual values). */
+  rawResponseShape?: import('../domain/response-shape').RawResponseShape;
   usage?: {
     promptTokens: number;
     completionTokens: number;

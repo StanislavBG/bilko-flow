@@ -283,7 +283,7 @@ function EllipsisDropdown({
 
       {open && (
         <div
-          className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-50 bg-gray-800 border border-gray-700 rounded-lg shadow-lg py-1 min-w-[160px] max-h-[200px] overflow-y-auto"
+          className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-20 bg-gray-800 border border-gray-700 rounded-lg shadow-lg py-1 min-w-[140px] max-w-[220px] max-h-[200px] overflow-y-auto"
         >
           {hiddenSteps.map(({ index, step }) => {
             const dotColor = step.status === 'complete'
@@ -353,12 +353,12 @@ function FullMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTheme 
   }, [steps, theme]);
 
   return (
-    <div className="w-full rounded-lg border border-gray-700 bg-gray-900 p-4">
+    <div className="w-full max-w-full rounded-lg border border-gray-700 bg-gray-900 p-4 overflow-hidden">
       {/* Header row */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between mb-4 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 overflow-hidden">
           <span
-            className={`w-2.5 h-2.5 rounded-full ${statusDotClass(status, theme)}`}
+            className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${statusDotClass(status, theme)}`}
             data-testid="status-dot"
           />
           {label && (
@@ -384,7 +384,7 @@ function FullMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTheme 
       </div>
 
       {/* Stepper row */}
-      <div className="flex items-center justify-center gap-0">
+      <div className="flex items-center justify-center gap-0 overflow-hidden">
         {windowItems.map((item, i) => {
           if (item.kind === 'ellipsis') {
             return (
@@ -550,7 +550,7 @@ function CompactMode(props: FlowProgressProps & { resolvedTheme: FlowProgressThe
   );
 
   return (
-    <div className="w-full">
+    <div className="w-full max-w-full overflow-hidden">
       {/* Progress counter */}
       {steps.length > 0 && (
         <div className="flex items-center gap-2 mb-1" data-testid="progress-counter">
@@ -721,10 +721,10 @@ function ExpandedMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
   }, [steps, theme]);
 
   return (
-    <div className="w-full rounded-lg border border-gray-700 bg-gray-900 p-4" data-testid="expanded-mode">
+    <div className="w-full max-w-full rounded-lg border border-gray-700 bg-gray-900 p-4 overflow-hidden" data-testid="expanded-mode">
       {/* Header row */}
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between mb-3 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 overflow-hidden">
           <span
             className={`w-2.5 h-2.5 rounded-full ${statusDotClass(status, theme)}`}
           />
@@ -748,7 +748,7 @@ function ExpandedMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
       </div>
 
       {/* Expanded step cards row */}
-      <div className="flex items-stretch gap-0 w-full" data-testid="expanded-step-cards">
+      <div className="flex items-stretch gap-0 w-full overflow-hidden" data-testid="expanded-step-cards">
         {windowItems.map((item, i) => {
           if (item.kind === 'ellipsis') {
             return (
@@ -960,7 +960,7 @@ export function FlowProgress(props: FlowProgressProps) {
   const effectiveMode = mode === 'auto' ? resolvedAutoMode : mode;
 
   return (
-    <div ref={containerRef} className={className} data-testid={mode === 'auto' ? 'auto-mode-container' : undefined}>
+    <div ref={containerRef} className={`max-w-full overflow-hidden ${className ?? ''}`} data-testid={mode === 'auto' ? 'auto-mode-container' : undefined}>
       {effectiveMode === 'full'
         ? <FullMode {...props} resolvedTheme={resolvedTheme} />
         : effectiveMode === 'expanded'
