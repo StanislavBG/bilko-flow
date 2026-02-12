@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { FlowProgress, adaptSteps } from '../../src/react/flow-progress';
 import type { FlowProgressStep, FlowProgressTheme } from '../../src/react/types';
@@ -613,6 +613,257 @@ describe('FlowProgress', () => {
       expect(container.firstChild).toBeInTheDocument();
       expect(screen.getByText('Processing step 2...')).toBeInTheDocument();
       expect(screen.getByText('Step 1 found 10 results')).toBeInTheDocument();
+    });
+  });
+
+  describe('expanded mode', () => {
+    it('renders step cards with labels', () => {
+      render(
+        <FlowProgress mode="expanded" steps={mockSteps} label="Test Flow" status="running" />,
+      );
+
+      // Each step should have an aria-label "Step N: label"
+      expect(screen.getByLabelText('Step 1: Discover')).toBeInTheDocument();
+      expect(screen.getByLabelText('Step 2: Write')).toBeInTheDocument();
+      expect(screen.getByLabelText('Step 3: Publish')).toBeInTheDocument();
+    });
+
+    it('renders the expanded-mode container', () => {
+      const { container } = render(
+        <FlowProgress mode="expanded" steps={mockSteps} status="running" />,
+      );
+
+      expect(container.querySelector('[data-testid="expanded-mode"]')).toBeInTheDocument();
+    });
+
+    it('renders flow label in header', () => {
+      render(
+        <FlowProgress mode="expanded" steps={mockSteps} label="My Pipeline" status="running" />,
+      );
+
+      expect(screen.getByText('My Pipeline')).toBeInTheDocument();
+    });
+
+    it('shows completed/total counter', () => {
+      render(
+        <FlowProgress mode="expanded" steps={mockSteps} status="running" />,
+      );
+
+      expect(screen.getByText('1/3')).toBeInTheDocument();
+    });
+
+    it('renders step cards container', () => {
+      const { container } = render(
+        <FlowProgress mode="expanded" steps={mockSteps} status="running" />,
+      );
+
+      const cardsContainer = container.querySelector('[data-testid="expanded-step-cards"]');
+      expect(cardsContainer).toBeInTheDocument();
+    });
+
+    it('shows step type info in cards', () => {
+      render(
+        <FlowProgress mode="expanded" steps={typedSteps} status="running" />,
+      );
+
+      // Type info is shown as "Step N · type"
+      expect(screen.getByText(/http\.search/)).toBeInTheDocument();
+      expect(screen.getByText(/ai\.summarize/)).toBeInTheDocument();
+      expect(screen.getByText(/transform\.map/)).toBeInTheDocument();
+    });
+
+    it('shows activity text when provided', () => {
+      render(
+        <FlowProgress
+          mode="expanded"
+          steps={mockSteps}
+          status="running"
+          activity="Generating content..."
+        />,
+      );
+
+      expect(screen.getByText('Generating content...')).toBeInTheDocument();
+    });
+
+    it('renders reset button when onReset provided', () => {
+      const onReset = jest.fn();
+      render(
+        <FlowProgress mode="expanded" steps={mockSteps} status="running" onReset={onReset} />,
+      );
+
+      const resetButton = screen.getByRole('button', { name: /reset/i });
+      fireEvent.click(resetButton);
+      expect(onReset).toHaveBeenCalledTimes(1);
+    });
+
+    it('calls onStepClick when a card is clicked', () => {
+      const onStepClick = jest.fn();
+      render(
+        <FlowProgress
+          mode="expanded"
+          steps={mockSteps}
+          status="running"
+          onStepClick={onStepClick}
+        />,
+      );
+
+      // Use aria-label to target the specific step card button
+      fireEvent.click(screen.getByLabelText('Step 2: Write'));
+      expect(onStepClick).toHaveBeenCalledWith('2');
+    });
+
+    it('renders segmented progress bar', () => {
+      const { container } = render(
+        <FlowProgress mode="expanded" steps={mockSteps} status="running" />,
+      );
+
+      const progressBar = container.querySelector('[data-testid="progress-bar"]');
+      expect(progressBar).toBeInTheDocument();
+      expect(progressBar!.children.length).toBe(3);
+    });
+
+    it('supports sliding window for many steps', () => {
+      const manySteps: FlowProgressStep[] = Array.from({ length: 12 }, (_, i) => ({
+        id: `s${i + 1}`,
+        label: `Step ${i + 1}`,
+        status: i < 5 ? 'complete' as const : i === 5 ? 'active' as const : 'pending' as const,
+      }));
+
+      render(
+        <FlowProgress mode="expanded" steps={manySteps} status="running" />,
+      );
+
+      const ellipsisButtons = screen.getAllByLabelText(/hidden steps/);
+      expect(ellipsisButtons.length).toBeGreaterThan(0);
+    });
+
+    it('calls stepRenderer with mode expanded', () => {
+      const stepRenderer = jest.fn((step, props) => (
+        <div key={step.id} data-testid={`custom-${step.id}`}>
+          Custom: {step.label}
+        </div>
+      ));
+
+      render(
+        <FlowProgress
+          mode="expanded"
+          steps={mockSteps}
+          status="running"
+          stepRenderer={stepRenderer}
+        />,
+      );
+
+      expect(stepRenderer).toHaveBeenCalledTimes(3);
+      // Verify mode='expanded' is passed to stepRenderer
+      const [, rendererProps] = stepRenderer.mock.calls[0];
+      expect(rendererProps.mode).toBe('expanded');
+    });
+  });
+
+  describe('auto mode', () => {
+    // Mock ResizeObserver
+    let observeCallback: ((entries: any[]) => void) | null = null;
+
+    beforeEach(() => {
+      observeCallback = null;
+      (global as any).ResizeObserver = class {
+        constructor(cb: (entries: any[]) => void) {
+          observeCallback = cb;
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      };
+    });
+
+    afterEach(() => {
+      delete (global as any).ResizeObserver;
+    });
+
+    it('renders auto-mode container with data-testid', () => {
+      const { container } = render(
+        <FlowProgress mode="auto" steps={mockSteps} status="running" />,
+      );
+
+      expect(container.querySelector('[data-testid="auto-mode-container"]')).toBeInTheDocument();
+    });
+
+    it('defaults to compact mode initially (zero-width container)', () => {
+      const { container } = render(
+        <FlowProgress mode="auto" steps={mockSteps} status="running" />,
+      );
+
+      // With zero-width container (JSDOM default), auto mode should resolve to compact
+      // Compact mode does not have the expanded-mode testid
+      expect(container.querySelector('[data-testid="expanded-mode"]')).not.toBeInTheDocument();
+    });
+
+    it('renders expanded mode when container is wide enough', () => {
+      const { container } = render(
+        <FlowProgress mode="auto" steps={mockSteps} status="running" autoBreakpoint={200} />,
+      );
+
+      // Simulate ResizeObserver firing with a wide container
+      const el = container.querySelector('[data-testid="auto-mode-container"]')!;
+      jest.spyOn(el, 'getBoundingClientRect').mockReturnValue({
+        width: 600,
+        height: 100,
+        top: 0,
+        left: 0,
+        bottom: 100,
+        right: 600,
+        x: 0,
+        y: 0,
+        toJSON: () => {},
+      });
+
+      // Trigger the ResizeObserver callback wrapped in act for state update
+      act(() => {
+        if (observeCallback) {
+          observeCallback([{ target: el }]);
+        }
+      });
+
+      // After resize, should render expanded mode
+      expect(container.querySelector('[data-testid="expanded-mode"]')).toBeInTheDocument();
+    });
+
+    it('respects custom autoBreakpoint', () => {
+      const { container } = render(
+        <FlowProgress mode="auto" steps={mockSteps} status="running" autoBreakpoint={800} />,
+      );
+
+      const el = container.querySelector('[data-testid="auto-mode-container"]')!;
+      jest.spyOn(el, 'getBoundingClientRect').mockReturnValue({
+        width: 600,
+        height: 100,
+        top: 0,
+        left: 0,
+        bottom: 100,
+        right: 600,
+        x: 0,
+        y: 0,
+        toJSON: () => {},
+      });
+
+      act(() => {
+        if (observeCallback) {
+          observeCallback([{ target: el }]);
+        }
+      });
+
+      // 600 < 800 breakpoint, so should stay compact (no expanded-mode)
+      expect(container.querySelector('[data-testid="expanded-mode"]')).not.toBeInTheDocument();
+    });
+
+    it('renders step labels regardless of resolved mode', () => {
+      render(
+        <FlowProgress mode="auto" steps={mockSteps} status="running" />,
+      );
+
+      expect(screen.getByText('Discover')).toBeInTheDocument();
+      expect(screen.getByText('Write')).toBeInTheDocument();
+      expect(screen.getByText('Publish')).toBeInTheDocument();
     });
   });
 });

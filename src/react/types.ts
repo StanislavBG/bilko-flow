@@ -141,17 +141,23 @@ export type FlowProgressStepRenderer = (
     isActive: boolean;
     bgColor: string;
     textColor: string;
-    mode: 'full' | 'compact';
+    mode: 'full' | 'compact' | 'expanded';
   },
 ) => React.ReactNode;
 
 /** FlowProgress component props */
 export interface FlowProgressProps {
-  /** Visual mode — "full" for footer/banner, "compact" for inline */
-  mode: 'full' | 'compact';
+  /**
+   * Visual mode:
+   * - "full": Large numbered circles, phase labels, wide connectors, header
+   * - "compact": Small status icons with inline text labels, thin connectors
+   * - "expanded": Rectangular step cards with icon, label, and type — fills available space
+   * - "auto": Dynamically selects "expanded" or "compact" based on container width
+   */
+  mode: 'full' | 'compact' | 'expanded' | 'auto';
   /** Steps to display, in order */
   steps: FlowProgressStep[];
-  /** Flow name/label (shown in "full" mode header) */
+  /** Flow name/label (shown in "full" and "expanded" mode header) */
   label?: string;
   /** Overall flow status */
   status?: 'idle' | 'running' | 'complete' | 'error';
@@ -171,6 +177,11 @@ export interface FlowProgressProps {
   stepRenderer?: FlowProgressStepRenderer;
   /** Sliding window radius (default: 2) */
   radius?: number;
+  /**
+   * Width breakpoint (in px) at which "auto" mode switches from "compact" to "expanded".
+   * Default: 480. Below this value, compact mode is used; at or above, expanded mode is used.
+   */
+  autoBreakpoint?: number;
 }
 
 /** FlowCanvas component props */

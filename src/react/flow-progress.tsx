@@ -20,7 +20,7 @@
  * and lucide-react icons.
  */
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   CheckCircle2,
   Circle,
@@ -37,12 +37,16 @@ import {
   MessageSquare,
   PlugZap,
   Brain,
+  ChevronRight,
 } from 'lucide-react';
 import type { FlowProgressProps, FlowProgressStep, FlowProgressTheme } from './types';
 import { mergeTheme } from './step-type-config';
 
 /** Default sliding window radius */
 const DEFAULT_RADIUS = 2;
+
+/** Default breakpoint (px) for auto mode: below → compact, at/above → expanded */
+const DEFAULT_AUTO_BREAKPOINT = 480;
 
 /** Threshold: sliding window activates when steps > 2*radius+3 */
 function needsWindow(count: number, radius: number): boolean {
@@ -692,9 +696,211 @@ function CompactMode(props: FlowProgressProps & { resolvedTheme: FlowProgressThe
   );
 }
 
+/** Expanded mode: rectangular step cards that fill available space */
+function ExpandedMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTheme }) {
+  const { steps, label, status, activity, onReset, onStepClick, stepRenderer, radius } = props;
+  const theme = props.resolvedTheme;
+  const windowRadius = radius ?? DEFAULT_RADIUS;
+
+  const activeIdx = steps.findIndex(s => s.status === 'active');
+  const completedCount = steps.filter(s => s.status === 'complete').length;
+  const sLabel = statusLabel(status, steps);
+
+  const windowItems = useMemo(
+    () => computeWindow(steps, windowRadius),
+    [steps, windowRadius],
+  );
+
+  // Progress percentage for the track bar
+  const segments = useMemo(() => {
+    if (steps.length === 0) return [];
+    return steps.map(step => ({
+      color: resolveStepBg(step, theme),
+      status: step.status,
+    }));
+  }, [steps, theme]);
+
+  return (
+    <div className="w-full rounded-lg border border-gray-700 bg-gray-900 p-4" data-testid="expanded-mode">
+      {/* Header row */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span
+            className={`w-2.5 h-2.5 rounded-full ${statusDotClass(status, theme)}`}
+          />
+          {label && (
+            <span className="font-semibold text-white text-sm">{label}</span>
+          )}
+          <span className="text-gray-400 text-sm">{sLabel}</span>
+          <span className="text-gray-500 text-xs ml-1">
+            {completedCount}/{steps.length}
+          </span>
+        </div>
+        {onReset && (
+          <button
+            onClick={onReset}
+            className="p-1 rounded hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
+            aria-label="Reset flow"
+          >
+            <RotateCcw size={16} />
+          </button>
+        )}
+      </div>
+
+      {/* Expanded step cards row */}
+      <div className="flex items-stretch gap-0 w-full" data-testid="expanded-step-cards">
+        {windowItems.map((item, i) => {
+          if (item.kind === 'ellipsis') {
+            return (
+              <React.Fragment key={`ellipsis-${i}`}>
+                <div className="flex items-center">
+                  <EllipsisDropdown
+                    hiddenSteps={item.hiddenSteps}
+                    onStepClick={onStepClick}
+                    mode="full"
+                    theme={theme}
+                  />
+                </div>
+                {i < windowItems.length - 1 && (
+                  <div className="flex items-center px-1 text-gray-600 flex-shrink-0">
+                    <ChevronRight size={16} />
+                  </div>
+                )}
+              </React.Fragment>
+            );
+          }
+
+          const { step, index } = item;
+          const bgColor = resolveStepBg(step, theme);
+          const textColor = resolveStepTextColor(step, theme, step.status === 'active');
+          const typeIcon = step.type ? getTypeIcon(step.type) : null;
+
+          // Custom step renderer
+          if (stepRenderer) {
+            const rendered = stepRenderer(step, {
+              index,
+              isActive: step.status === 'active',
+              bgColor,
+              textColor,
+              mode: 'expanded',
+            });
+            if (rendered) {
+              return (
+                <React.Fragment key={step.id}>
+                  <div className="flex-1 min-w-0">{rendered}</div>
+                  {i < windowItems.length - 1 && (
+                    <div className="flex items-center px-1 text-gray-600 flex-shrink-0">
+                      <ChevronRight size={16} />
+                    </div>
+                  )}
+                </React.Fragment>
+              );
+            }
+          }
+
+          const isActive = step.status === 'active';
+
+          return (
+            <React.Fragment key={step.id}>
+              {/* Step card */}
+              <button
+                className={`
+                  flex-1 min-w-0 flex items-center gap-2.5 rounded-lg border px-3 py-2.5
+                  transition-all duration-300 text-left
+                  ${isActive
+                    ? 'border-green-500/40 bg-gray-800 ring-1 ring-green-500/20'
+                    : step.status === 'error'
+                      ? 'border-red-500/30 bg-gray-800/60'
+                      : step.status === 'complete'
+                        ? 'border-gray-600 bg-gray-800/80'
+                        : 'border-gray-700/50 bg-gray-800/40'
+                  }
+                `}
+                onClick={() => onStepClick?.(step.id)}
+                aria-label={`Step ${index + 1}: ${step.label}`}
+              >
+                {/* Status/type indicator */}
+                <div
+                  className={`
+                    w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0
+                    text-white text-sm font-medium
+                    ${bgColor}
+                    ${isActive ? 'animate-pulse' : ''}
+                  `}
+                >
+                  {step.status === 'complete' ? (
+                    <CheckCircle2 size={16} />
+                  ) : step.status === 'error' ? (
+                    <AlertCircle size={16} />
+                  ) : typeIcon ? (
+                    <span className="flex items-center justify-center">{typeIcon}</span>
+                  ) : (
+                    <span className="text-xs">{index + 1}</span>
+                  )}
+                </div>
+
+                {/* Label + step number */}
+                <div className="min-w-0 flex-1">
+                  <div className={`text-sm truncate ${
+                    isActive ? 'text-white font-medium' :
+                    step.status === 'complete' ? 'text-gray-300' :
+                    step.status === 'error' ? 'text-red-300' :
+                    'text-gray-400'
+                  }`}>
+                    {step.label}
+                  </div>
+                  <div className="text-xs text-gray-500 truncate">
+                    Step {index + 1}{step.type ? ` \u00b7 ${step.type}` : ''}
+                  </div>
+                </div>
+              </button>
+
+              {/* Connector chevron */}
+              {i < windowItems.length - 1 && (
+                <div className="flex items-center px-1 text-gray-600 flex-shrink-0">
+                  <ChevronRight size={16} />
+                </div>
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
+
+      {/* Segmented progress track */}
+      <div className="mt-3 h-1.5 w-full bg-gray-700 rounded-full overflow-hidden flex" data-testid="progress-bar">
+        {segments.map((seg, i) => (
+          <div
+            key={i}
+            className={`
+              h-full transition-all duration-500
+              ${seg.status === 'pending' ? 'bg-gray-700' : seg.color}
+              ${i === 0 ? 'rounded-l-full' : ''}
+              ${i === segments.length - 1 ? 'rounded-r-full' : ''}
+            `}
+            style={{ width: `${100 / segments.length}%` }}
+          />
+        ))}
+      </div>
+
+      {/* Activity text */}
+      {activity && (
+        <p className="mt-2 text-xs text-gray-400 text-center truncate">
+          {activity}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /**
- * FlowProgress — Dual-mode progress visualization with sliding window
+ * FlowProgress — Multi-mode progress visualization with sliding window
  * and theme-first customization.
+ *
+ * Supports four visual modes:
+ * - "full": Large numbered circles, phase labels, wide connectors, header
+ * - "compact": Small status icons with inline text labels, thin connectors
+ * - "expanded": Rectangular step cards with icon, label, and type — fills available space
+ * - "auto": Dynamically selects "expanded" or "compact" based on container width
  *
  * Supports the Context Adapter Pattern: pass an `adapter` function prop
  * to convert external step data to FlowProgressStep[]. This enables
@@ -706,7 +912,7 @@ function CompactMode(props: FlowProgressProps & { resolvedTheme: FlowProgressThe
  * @example
  * ```tsx
  * <FlowProgress
- *   mode="full"
+ *   mode="auto"
  *   steps={[
  *     { id: "1", label: "Discover", status: "complete", type: "http.search" },
  *     { id: "2", label: "Write", status: "active", type: "ai.generate-text" },
@@ -715,21 +921,51 @@ function CompactMode(props: FlowProgressProps & { resolvedTheme: FlowProgressThe
  *   label="Content Pipeline"
  *   status="running"
  *   activity="Writing article draft..."
- *   theme={{ stepColors: { 'ai.generate-text': 'bg-indigo-500' } }}
- *   onStepClick={(id) => console.log("Step clicked:", id)}
+ *   autoBreakpoint={600}
  * />
  * ```
  */
 export function FlowProgress(props: FlowProgressProps) {
-  const { mode, className, theme } = props;
+  const { mode, className, theme, autoBreakpoint } = props;
 
   const resolvedTheme = useMemo(() => mergeTheme(theme), [theme]);
 
+  // --- Auto mode: measure container width with ResizeObserver ---
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [resolvedAutoMode, setResolvedAutoMode] = useState<'expanded' | 'compact'>('compact');
+
+  useEffect(() => {
+    if (mode !== 'auto') return;
+
+    const el = containerRef.current;
+    if (!el) return;
+
+    const breakpoint = autoBreakpoint ?? DEFAULT_AUTO_BREAKPOINT;
+
+    const update = () => {
+      const width = el.getBoundingClientRect().width;
+      setResolvedAutoMode(width >= breakpoint ? 'expanded' : 'compact');
+    };
+
+    // Initial measurement
+    update();
+
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [mode, autoBreakpoint]);
+
+  const effectiveMode = mode === 'auto' ? resolvedAutoMode : mode;
+
   return (
-    <div className={className}>
-      {mode === 'full'
+    <div ref={containerRef} className={className} data-testid={mode === 'auto' ? 'auto-mode-container' : undefined}>
+      {effectiveMode === 'full'
         ? <FullMode {...props} resolvedTheme={resolvedTheme} />
-        : <CompactMode {...props} resolvedTheme={resolvedTheme} />
+        : effectiveMode === 'expanded'
+          ? <ExpandedMode {...props} resolvedTheme={resolvedTheme} />
+          : <CompactMode {...props} resolvedTheme={resolvedTheme} />
       }
     </div>
   );
