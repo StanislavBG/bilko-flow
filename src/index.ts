@@ -25,6 +25,7 @@ export { createApp, createAppContext } from './server';
 export * from './domain';
 export * from './dsl';
 export * from './engine';
+export * from './execution';
 export * from './storage';
 export * from './planner';
 export * from './data-plane';

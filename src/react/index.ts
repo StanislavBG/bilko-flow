@@ -49,6 +49,15 @@ export type { NodeLayout, EdgeLayout, DAGLayout } from './layout';
 export { STEP_TYPE_CONFIG, LLM_SUBTYPE_CONFIG, getStepVisuals } from './step-type-config';
 export type { StepTypeVisuals } from './step-type-config';
 
+// Execution hooks
+export { useExecutionStore } from './use-execution-store';
+export type { UseExecutionStoreReturn } from './use-execution-store';
+export { useFlowExecution } from './use-flow-execution';
+export type {
+  UseFlowExecutionOptions,
+  UseFlowExecutionReturn,
+} from './use-flow-execution';
+
 // Types
 export type {
   UIStepType,
