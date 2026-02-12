@@ -12,6 +12,34 @@ export { StepNode } from './step-node';
 export { StepDetail } from './step-detail';
 export { FlowTimeline } from './flow-timeline';
 export { FlowCard } from './flow-card';
+export { CanvasBuilder } from './canvas-builder';
+export type { ParsedIntent, CanvasBuilderProps } from './canvas-builder';
+export { ComponentCatalog } from './component-catalog';
+export type { ComponentCatalogProps } from './component-catalog';
+
+// Mutation engine (pure functions, no React dependency)
+export {
+  applyMutation,
+  createBlankStep,
+  generateStepId,
+} from './mutations';
+export type {
+  FlowMutation,
+  MutationResult,
+  MutationValidationError,
+} from './mutations';
+
+// Component definitions (data, no React dependency)
+export {
+  DEFAULT_COMPONENT_DEFINITIONS,
+  getComponentByType,
+} from './component-definitions';
+export type {
+  ComponentDefinition,
+  ComponentFieldSpec,
+  ComponentUseCase,
+  ComponentReference,
+} from './component-definitions';
 
 // Layout engine (pure function, no React dependency)
 export { computeLayout, NODE_W, NODE_H, COL_GAP, ROW_GAP, PADDING } from './layout';
