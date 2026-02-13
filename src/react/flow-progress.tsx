@@ -5,12 +5,14 @@
  * AGENT / LLM USAGE GUIDE
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * This component visualizes workflow execution progress in four modes:
+ * This component visualizes workflow execution progress in five modes:
  * - "full": Large numbered circles, phase labels, wide connectors, header,
  *           progress track, completed/total counter
  * - "compact": Small status icons with inline text labels, thin connectors
  * - "expanded": Rectangular step cards with icon, label, type info
- * - "auto": Dynamically switches between expanded/compact based on width
+ * - "vertical": Top-to-bottom timeline with vertical connector rail, ideal
+ *               for mobile screens and narrow containers
+ * - "auto": Dynamically switches between vertical (narrow) and expanded (wide)
  *
  * ## SEQUENTIAL FLOWS
  * Pass `steps` prop with an array of FlowProgressStep objects.
@@ -45,215 +47,27 @@ import {
   AlertCircle,
   XCircle,
   MoreHorizontal,
-  Search,
-  Globe,
-  ArrowRightLeft,
-  ShieldCheck,
-  Monitor,
-  MessageSquare,
-  PlugZap,
-  Brain,
   ChevronRight,
 } from 'lucide-react';
 import type { FlowProgressProps, FlowProgressStep, FlowProgressTheme } from './types';
 import { mergeTheme } from './step-type-config';
 import { ParallelThreadsSection } from './parallel-threads';
-
-/** Default sliding window radius */
-const DEFAULT_RADIUS = 2;
-
-/** Default breakpoint (px) for auto mode: below → compact, at/above → expanded */
-const DEFAULT_AUTO_BREAKPOINT = 480;
-
-/** Threshold: sliding window activates when steps > 2*radius+3 */
-function needsWindow(count: number, radius: number): boolean {
-  return count > 2 * radius + 3;
-}
-
-/** Get the resolved background color for a step, considering theme and type */
-function resolveStepBg(
-  step: FlowProgressStep,
-  theme: FlowProgressTheme,
-): string {
-  switch (step.status) {
-    case 'complete':
-      return step.type && theme.stepColors[step.type]
-        ? theme.stepColors[step.type]
-        : theme.completedColor;
-    case 'active':
-      return step.type && theme.stepColors[step.type]
-        ? theme.stepColors[step.type]
-        : theme.activeColor;
-    case 'error':
-      return theme.errorColor;
-    default:
-      return theme.pendingColor;
-  }
-}
-
-/** Get the text color for a step label from theme */
-function resolveStepTextColor(
-  step: FlowProgressStep,
-  theme: FlowProgressTheme,
-  isBold: boolean,
-): string {
-  switch (step.status) {
-    case 'active':
-      return isBold ? 'text-white font-bold' : theme.activeTextColor + ' font-medium';
-    case 'complete':
-      return theme.completedTextColor;
-    case 'error':
-      return theme.errorTextColor;
-    default:
-      return theme.pendingTextColor;
-  }
-}
-
-/** Get connector bar color: uses step type color for completed steps */
-function resolveConnectorColor(
-  step: FlowProgressStep,
-  theme: FlowProgressTheme,
-): string {
-  if (step.status === 'complete') {
-    return step.type && theme.stepColors[step.type]
-      ? theme.stepColors[step.type]
-      : theme.completedColor;
-  }
-  return theme.pendingColor;
-}
-
-/** Map step type string to a lucide-react icon for compact mode */
-function getTypeIcon(type?: string): React.ReactNode {
-  switch (type) {
-    case 'llm':
-    case 'ai.summarize':
-    case 'ai.generate-text':
-    case 'ai.generate-text-local':
-    case 'ai.summarize-local':
-    case 'ai.embed-local':
-      return <Brain size={14} />;
-    case 'ai.generate-image':
-    case 'ai.generate-video':
-      return <Brain size={14} />;
-    case 'transform':
-    case 'transform.filter':
-    case 'transform.map':
-    case 'transform.reduce':
-      return <ArrowRightLeft size={14} />;
-    case 'validate':
-      return <ShieldCheck size={14} />;
-    case 'display':
-    case 'notification.send':
-      return <Monitor size={14} />;
-    case 'chat':
-    case 'social.post':
-      return <MessageSquare size={14} />;
-    case 'external-input':
-    case 'http.search':
-    case 'http.request':
-      return <Globe size={14} />;
-    case 'user-input':
-      return <PlugZap size={14} />;
-    default:
-      return null;
-  }
-}
-
-/** Status dot color for the header — uses theme */
-function statusDotClass(status: FlowProgressProps['status'], theme: FlowProgressTheme): string {
-  switch (status) {
-    case 'running':
-      return `${theme.activeColor} animate-pulse`;
-    case 'complete':
-      return theme.completedColor;
-    case 'error':
-      return theme.errorColor;
-    default:
-      return 'bg-gray-400';
-  }
-}
-
-/** Human-readable status label */
-function statusLabel(status: FlowProgressProps['status'], steps: FlowProgressStep[]): string {
-  switch (status) {
-    case 'running': {
-      const active = steps.find(s => s.status === 'active');
-      return active ? active.label : 'Running';
-    }
-    case 'complete':
-      return 'Done';
-    case 'error':
-      return 'Error';
-    default:
-      return 'Idle';
-  }
-}
-
-/** Visible item in the windowed step list */
-type WindowItem =
-  | { kind: 'step'; index: number; step: FlowProgressStep }
-  | { kind: 'ellipsis'; hiddenSteps: Array<{ index: number; step: FlowProgressStep }> };
-
-/**
- * Compute the sliding window over steps.
- * Always shows: first, last, active ± radius.
- * Gaps become ellipsis markers containing the hidden steps.
- */
-function computeWindow(
-  steps: FlowProgressStep[],
-  radius: number,
-): WindowItem[] {
-  if (!needsWindow(steps.length, radius)) {
-    return steps.map((step, index) => ({ kind: 'step', index, step }));
-  }
-
-  const activeIdx = steps.findIndex(s => s.status === 'active');
-  const center = activeIdx >= 0 ? activeIdx : 0;
-
-  // Build set of visible indices
-  const visible = new Set<number>();
-  visible.add(0);
-  visible.add(steps.length - 1);
-  for (let i = Math.max(0, center - radius); i <= Math.min(steps.length - 1, center + radius); i++) {
-    visible.add(i);
-  }
-
-  const sortedVisible = Array.from(visible).sort((a, b) => a - b);
-  const items: WindowItem[] = [];
-
-  let prevIdx = -1;
-  for (const idx of sortedVisible) {
-    // If there's a gap, insert ellipsis
-    if (prevIdx >= 0 && idx > prevIdx + 1) {
-      const hidden: Array<{ index: number; step: FlowProgressStep }> = [];
-      for (let h = prevIdx + 1; h < idx; h++) {
-        hidden.push({ index: h, step: steps[h] });
-      }
-      items.push({ kind: 'ellipsis', hiddenSteps: hidden });
-    }
-    items.push({ kind: 'step', index: idx, step: steps[idx] });
-    prevIdx = idx;
-  }
-
-  return items;
-}
-
-/** Label display mode based on distance from active step */
-type LabelMode = 'full-bold' | 'full' | 'truncated' | 'number-only';
-
-function getLabelMode(stepIndex: number, activeIndex: number): LabelMode {
-  const dist = Math.abs(stepIndex - activeIndex);
-  if (dist === 0) return 'full-bold';
-  if (dist === 1) return 'full';
-  if (dist === 2) return 'truncated';
-  return 'number-only';
-}
-
-/** Truncate label to maxLen characters */
-function truncateLabel(label: string, maxLen: number): string {
-  if (label.length <= maxLen) return label;
-  return label.slice(0, maxLen - 1) + '\u2026';
-}
+import { FlowProgressVertical } from './flow-progress-vertical';
+import {
+  DEFAULT_RADIUS,
+  DEFAULT_AUTO_BREAKPOINT,
+  needsWindow,
+  resolveStepBg,
+  resolveStepTextColor,
+  resolveConnectorColor,
+  getTypeIcon,
+  statusDotClass,
+  statusLabel,
+  computeWindow,
+  getLabelMode,
+  truncateLabel,
+} from './flow-progress-shared';
+import type { WindowItem } from './flow-progress-shared';
 
 /** Ellipsis dropdown for hidden steps */
 function EllipsisDropdown({
@@ -962,8 +776,11 @@ function ExpandedMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
  *   Best for narrow containers (< 480px, sidebars).
  * - "expanded": Rectangular step cards with icon, label, and type.
  *   Best for medium containers (480–900px).
- * - "auto": Dynamically selects "expanded" or "compact" based on container
- *   width. Use when container size is unknown or responsive.
+ * - "vertical": Top-to-bottom timeline with vertical connector rail and
+ *   expandable ellipsis. Best for mobile (< 480px) where vertical space
+ *   is abundant.
+ * - "auto": Dynamically selects "vertical" (narrow) or "expanded" (wide)
+ *   based on container width. Use when container size is unknown.
  *
  * ## LINEAR FLOW (sequential steps only)
  * Pass `steps` array. Steps render left-to-right with sliding window
@@ -1063,15 +880,30 @@ export function FlowProgress(props: FlowProgressProps) {
     return () => ro.disconnect();
   }, [mode, autoBreakpoint]);
 
-  const effectiveMode = mode === 'auto' ? resolvedAutoMode : mode;
+  // Auto mode: narrow → vertical, wide → expanded
+  const effectiveMode = mode === 'auto'
+    ? (resolvedAutoMode === 'compact' ? 'vertical' : resolvedAutoMode)
+    : mode;
 
   return (
     <div ref={containerRef} className={`max-w-full overflow-hidden ${className ?? ''}`} data-testid={mode === 'auto' ? 'auto-mode-container' : undefined}>
-      {effectiveMode === 'full'
-        ? <FullMode {...props} resolvedTheme={resolvedTheme} />
-        : effectiveMode === 'expanded'
-          ? <ExpandedMode {...props} resolvedTheme={resolvedTheme} />
-          : <CompactMode {...props} resolvedTheme={resolvedTheme} />
+      {effectiveMode === 'vertical'
+        ? <FlowProgressVertical
+            steps={props.steps}
+            label={props.label}
+            status={props.status}
+            activity={props.activity}
+            lastResult={props.lastResult}
+            onReset={props.onReset}
+            onStepClick={props.onStepClick}
+            theme={resolvedTheme}
+            radius={props.radius}
+          />
+        : effectiveMode === 'full'
+          ? <FullMode {...props} resolvedTheme={resolvedTheme} />
+          : effectiveMode === 'expanded'
+            ? <ExpandedMode {...props} resolvedTheme={resolvedTheme} />
+            : <CompactMode {...props} resolvedTheme={resolvedTheme} />
       }
     </div>
   );

@@ -788,13 +788,13 @@ describe('FlowProgress', () => {
       expect(container.querySelector('[data-testid="auto-mode-container"]')).toBeInTheDocument();
     });
 
-    it('defaults to compact mode initially (zero-width container)', () => {
+    it('defaults to vertical mode initially (zero-width container)', () => {
       const { container } = render(
         <FlowProgress mode="auto" steps={mockSteps} status="running" />,
       );
 
-      // With zero-width container (JSDOM default), auto mode should resolve to compact
-      // Compact mode does not have the expanded-mode testid
+      // With zero-width container (JSDOM default), auto mode should resolve to vertical
+      expect(container.querySelector('[data-testid="vertical-mode"]')).toBeInTheDocument();
       expect(container.querySelector('[data-testid="expanded-mode"]')).not.toBeInTheDocument();
     });
 
@@ -861,9 +861,11 @@ describe('FlowProgress', () => {
         <FlowProgress mode="auto" steps={mockSteps} status="running" />,
       );
 
-      expect(screen.getByText('Discover')).toBeInTheDocument();
-      expect(screen.getByText('Write')).toBeInTheDocument();
-      expect(screen.getByText('Publish')).toBeInTheDocument();
+      // In vertical mode (auto resolves to vertical for narrow containers),
+      // use aria-labels since the active step label also appears in the header
+      expect(screen.getByLabelText('Step 1: Discover')).toBeInTheDocument();
+      expect(screen.getByLabelText('Step 2: Write')).toBeInTheDocument();
+      expect(screen.getByLabelText('Step 3: Publish')).toBeInTheDocument();
     });
   });
 });
