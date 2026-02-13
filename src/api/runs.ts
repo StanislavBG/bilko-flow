@@ -14,6 +14,22 @@ import { AuditService } from '../audit/audit-service';
 import { WorkflowExecutor, ExecutorError } from '../engine/executor';
 import { AuthenticatedRequest } from './middleware';
 
+/** Redact secret values from inputs to prevent leaking in stored run data. */
+function redactSecrets(
+  inputs: Record<string, unknown>,
+  secretOverrides?: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!secretOverrides) return inputs;
+  const secretKeys = new Set(Object.keys(secretOverrides));
+  const redacted = { ...inputs };
+  for (const key of secretKeys) {
+    if (key in redacted) {
+      redacted[key] = '[REDACTED]';
+    }
+  }
+  return redacted;
+}
+
 export function createRunRoutes(
   store: Store,
   auditService: AuditService,
@@ -34,15 +50,17 @@ export function createRunRoutes(
 
       const { workflowVersion, inputs, secretOverrides } = req.body;
 
-      // Create the run
+      // Redact secret keys from stored inputs to prevent leaking in run data
+      const safeInputs = inputs ? redactSecrets(inputs, secretOverrides) : inputs;
+
+      // Create the run (secretOverrides are NOT persisted — only passed to executor)
       const run = await executor.createRun({
         workflowId: req.params.workflowId,
         accountId: req.scope.accountId,
         projectId: req.scope.projectId,
         environmentId: req.scope.environmentId,
         workflowVersion,
-        inputs,
-        secretOverrides,
+        inputs: safeInputs,
       });
 
       // Audit

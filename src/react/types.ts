@@ -327,9 +327,11 @@ export interface FlowProgressProps {
    * - "full": Large numbered circles, phase labels, wide connectors, header
    * - "compact": Small status icons with inline text labels, thin connectors
    * - "expanded": Rectangular step cards with icon, label, and type — fills available space
-   * - "auto": Dynamically selects "expanded" or "compact" based on container width
+   * - "auto": Dynamically selects "expanded" or "vertical" based on container width
+   * - "vertical": Top-to-bottom timeline with vertical connector rail, ideal for
+   *   mobile screens (< 480px) or narrow containers with abundant vertical space
    */
-  mode: 'full' | 'compact' | 'expanded' | 'auto';
+  mode: 'full' | 'compact' | 'expanded' | 'auto' | 'vertical';
   /** Steps to display, in order (main chain before any fork point) */
   steps: FlowProgressStep[];
   /**

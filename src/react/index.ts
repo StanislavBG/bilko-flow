@@ -24,6 +24,9 @@
  * STEP 2 — Pick the right component and mode:
  *
  *   FlowProgress — Choose mode based on available width:
+ *     • "vertical"  → Mobile screens (< 480px width) or any narrow container
+ *                     where vertical space is abundant. Shows steps top-to-bottom
+ *                     with a vertical connector rail and expandable ellipsis.
  *     • "compact"   → Tight spaces (sidebars, inline widgets, < 480px width).
  *                     Minimal footprint: dot chain + labels.
  *                     Parallel threads stack as minimal indented rows.
@@ -35,7 +38,7 @@
  *                     Parallel threads render as full lanes with numbered steps.
  *     • "auto"      → When the container width is dynamic or unknown.
  *                     Set `autoBreakpoint` to the px threshold that best fits
- *                     the layout (default 480). Switches between expanded/compact.
+ *                     the layout (default 480). Narrow → vertical, wide → expanded.
  *
  *   FlowCanvas — Use ONLY when you have a large 2D area (≥ 500×400px) and
  *     the user needs to explore a DAG structure interactively.
@@ -143,6 +146,10 @@
 
 // Components
 export { FlowProgress, adaptSteps } from './flow-progress';
+export { FlowProgressVertical } from './flow-progress-vertical';
+export type { FlowProgressVerticalProps } from './flow-progress-vertical';
+export { FlowErrorBoundary } from './flow-error-boundary';
+export type { FlowErrorBoundaryProps } from './flow-error-boundary';
 export { FlowCanvas } from './flow-canvas';
 export { StepNode } from './step-node';
 export { StepDetail } from './step-detail';
