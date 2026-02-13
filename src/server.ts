@@ -15,7 +15,9 @@ import { WorkflowExecutor } from './engine/executor';
 import { AuditService } from './audit/audit-service';
 import { WebhookService } from './notifications/webhook';
 import { defaultIdentityMiddleware, errorHandler } from './api/middleware';
+import { rateLimit } from './api/rate-limit';
 import { createAccountRoutes } from './api/accounts';
+import { createAuthRoutes } from './api/auth';
 import { hashPassword } from './api/auth';
 import { createWorkflowRoutes } from './api/workflows';
 import { createRunRoutes } from './api/runs';
@@ -72,6 +74,13 @@ export function createApp(context?: AppContext): express.Application {
   // Body parsing
   app.use(express.json({ limit: '10mb' }));
 
+  // Global rate limiter — 60 requests/minute per IP
+  app.use('/api', rateLimit({ maxRequests: 60, windowMs: 60_000 }));
+
+  // Stricter rate limit on auth endpoints — 10 requests/minute per IP
+  app.use('/api/auth', rateLimit({ maxRequests: 10, windowMs: 60_000 }));
+  app.use('/api/v1/auth', rateLimit({ maxRequests: 10, windowMs: 60_000 }));
+
   // Health check — includes uptime, version, and storage type
   app.get('/health', (_req, res) => {
     res.json({
@@ -95,6 +104,10 @@ export function createApp(context?: AppContext): express.Application {
 
   // Default identity middleware — auto-injects identity context (no login required)
   app.use('/api', defaultIdentityMiddleware(ctx.store));
+
+  // Auth routes (before RBAC middleware so unauthenticated users can log in)
+  app.use('/api/auth', createAuthRoutes(ctx.store));
+  app.use('/api/v1/auth', createAuthRoutes(ctx.store));
 
   // Versioned API routes — /api/v1 prefix
   const v1 = express.Router();

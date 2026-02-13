@@ -26,7 +26,8 @@ export function defaultIdentityMiddleware(store: Store) {
   return async (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
     const identityId = (req.headers['x-identity-id'] as string) || 'anonymous';
     const identityType = (req.headers['x-identity-type'] as string) || 'user';
-    const accountId = req.headers['x-account-id'] as string || req.params.accountId || (req.body as any)?.accountId;
+    const body = (req.body && typeof req.body === 'object') ? req.body as Record<string, unknown> : {};
+    const accountId = req.headers['x-account-id'] as string || req.params.accountId || (typeof body.accountId === 'string' ? body.accountId : undefined);
 
     if (identityId && accountId) {
       req.identity = {
@@ -40,8 +41,8 @@ export function defaultIdentityMiddleware(store: Store) {
     }
 
     // Extract scope from various sources
-    const projectId = req.headers['x-project-id'] as string || req.params.projectId || (req.body as any)?.projectId;
-    const environmentId = req.headers['x-environment-id'] as string || req.params.environmentId || (req.body as any)?.environmentId;
+    const projectId = req.headers['x-project-id'] as string || req.params.projectId || (typeof body.projectId === 'string' ? body.projectId : undefined);
+    const environmentId = req.headers['x-environment-id'] as string || req.params.environmentId || (typeof body.environmentId === 'string' ? body.environmentId : undefined);
 
     if (accountId && projectId && environmentId) {
       req.scope = { accountId, projectId, environmentId };

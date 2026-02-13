@@ -213,6 +213,8 @@ export function FlowProgressVertical(props: FlowProgressVerticalProps) {
   );
 }
 
+FlowProgressVertical.displayName = 'FlowProgressVertical';
+
 /** Expandable ellipsis row for hidden steps in vertical mode */
 function VerticalEllipsis({
   hiddenSteps,

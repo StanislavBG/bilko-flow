@@ -848,7 +848,7 @@ function ExpandedMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
  * />
  * ```
  */
-export function FlowProgress(props: FlowProgressProps) {
+export function FlowProgress(props: FlowProgressProps): React.JSX.Element {
   const { mode, className, theme, autoBreakpoint } = props;
 
   const resolvedTheme = useMemo(() => mergeTheme(theme), [theme]);
@@ -927,6 +927,8 @@ export function FlowProgress(props: FlowProgressProps) {
  * <FlowProgress mode="compact" steps={steps} />
  * ```
  */
+FlowProgress.displayName = 'FlowProgress';
+
 export function adaptSteps<T>(
   data: T[],
   adapter: (item: T, index: number) => FlowProgressStep,

@@ -148,6 +148,8 @@
 export { FlowProgress, adaptSteps } from './flow-progress';
 export { FlowProgressVertical } from './flow-progress-vertical';
 export type { FlowProgressVerticalProps } from './flow-progress-vertical';
+export { FlowErrorBoundary } from './flow-error-boundary';
+export type { FlowErrorBoundaryProps } from './flow-error-boundary';
 export { FlowCanvas } from './flow-canvas';
 export { StepNode } from './step-node';
 export { StepDetail } from './step-detail';
