@@ -19,7 +19,7 @@ import {
   RepairContext,
 } from '../planner/interface';
 import { DeterminismGrade } from '../domain/determinism';
-import { chatJSON, ChatOptions, LLMProvider, LLMParseError, LLMProviderError } from './index';
+import { chatJSON, ChatOptions, LLMProvider, LLMProviderError } from './index';
 
 /** Configuration for the LLM planner. */
 export interface LLMPlannerConfig {
@@ -27,7 +27,7 @@ export interface LLMPlannerConfig {
   provider: LLMProvider;
   /** Model identifier. */
   model: string;
-  /** API key. */
+  /** API key (required — no fallback). */
   apiKey: string;
   /** Base URL override. */
   baseUrl?: string;
@@ -35,8 +35,6 @@ export interface LLMPlannerConfig {
   maxTokens?: number;
   /** Temperature for generation (lower = more deterministic). */
   temperature?: number;
-  /** Max retries for JSON parsing. */
-  maxRetries?: number;
 }
 
 /** System prompt that instructs the LLM on Bilko DSL output format. */
@@ -130,6 +128,13 @@ export class LLMPlanner implements Planner {
 
   /** Internal helper to call chatJSON with standard config. */
   private async callLLM<T>(userPrompt: string): Promise<T> {
+    if (!this.config.apiKey) {
+      throw new LLMProviderError(
+        `API key is required for LLM planner (provider: "${this.config.provider}"). Provide a valid API key.`,
+        401,
+      );
+    }
+
     const options: ChatOptions = {
       provider: this.config.provider,
       model: this.config.model,
@@ -137,7 +142,6 @@ export class LLMPlanner implements Planner {
       baseUrl: this.config.baseUrl,
       maxTokens: this.config.maxTokens ?? 4096,
       temperature: this.config.temperature ?? 0.2,
-      maxRetries: this.config.maxRetries ?? 3,
       systemPrompt: SYSTEM_PROMPT,
       messages: [
         { role: 'user', content: userPrompt },

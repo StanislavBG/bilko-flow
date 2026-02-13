@@ -9,7 +9,6 @@ import { Router } from 'express';
 import { apiError, validationError } from '../domain/errors';
 import {
   chatJSON,
-  cleanLLMResponse,
   LLMParseError,
   LLMProviderError,
   LLMProvider,
@@ -26,8 +25,6 @@ export function createLLMRoutes(): Router {
    * POST /llm/chat
    *
    * Send a prompt to an LLM and receive structured JSON back.
-   * Uses chatJSON() with all resilience layers: response_format constraint,
-   * JSON repair, and retry with backoff.
    *
    * Body:
    *   provider: LLMProvider (required)
@@ -37,11 +34,10 @@ export function createLLMRoutes(): Router {
    *   apiKey: string (required)
    *   maxTokens?: number
    *   temperature?: number
-   *   maxRetries?: number
    */
   router.post('/chat', async (req: AuthenticatedRequest, res) => {
     try {
-      const { provider, model, messages, systemPrompt, apiKey, maxTokens, temperature, maxRetries } = req.body;
+      const { provider, model, messages, systemPrompt, apiKey, maxTokens, temperature } = req.body;
 
       if (!provider || !model || !messages || !apiKey) {
         res.status(400).json(
@@ -65,7 +61,6 @@ export function createLLMRoutes(): Router {
         apiKey,
         maxTokens,
         temperature,
-        maxRetries,
       });
 
       res.json({ result });
@@ -94,8 +89,7 @@ export function createLLMRoutes(): Router {
    * POST /llm/propose
    *
    * Use the LLM planner to convert a natural-language goal into a
-   * workflow proposal. This is a convenience endpoint that combines
-   * chatJSON() with the Bilko DSL prompt templates.
+   * workflow proposal.
    *
    * Body:
    *   provider: LLMProvider (required)
@@ -148,45 +142,6 @@ export function createLLMRoutes(): Router {
         apiError({
           code: 'SYSTEM.INTERNAL',
           message: err instanceof Error ? err.message : 'Workflow proposal failed',
-          retryable: false,
-          suggestedFixes: [],
-        }),
-      );
-    }
-  });
-
-  /**
-   * POST /llm/parse
-   *
-   * Utility endpoint: parse a raw LLM response string into JSON.
-   * Useful for debugging and testing the JSON repair pipeline.
-   *
-   * Body:
-   *   raw: string (the raw LLM text to parse)
-   */
-  router.post('/parse', async (req: AuthenticatedRequest, res) => {
-    try {
-      const { raw } = req.body;
-
-      if (!raw || typeof raw !== 'string') {
-        res.status(400).json(
-          apiError(validationError('raw string is required')),
-        );
-        return;
-      }
-
-      const parsed = cleanLLMResponse(raw);
-
-      res.json({ parsed });
-    } catch (err) {
-      if (err instanceof LLMParseError) {
-        res.status(422).json(apiError(err.typedError));
-        return;
-      }
-      res.status(500).json(
-        apiError({
-          code: 'SYSTEM.INTERNAL',
-          message: err instanceof Error ? err.message : 'Parse failed',
           retryable: false,
           suggestedFixes: [],
         }),

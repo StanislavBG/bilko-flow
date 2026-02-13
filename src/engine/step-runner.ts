@@ -80,23 +80,6 @@ export function getRegisteredHandlers(): Map<string, StepHandler> {
   return stepHandlers;
 }
 
-/** Default step handler that returns mock outputs for development. */
-function getDefaultHandler(stepType: string): StepHandler {
-  return {
-    type: stepType,
-    async execute(step: CompiledStep, _context: StepExecutionContext) {
-      // Reference implementation: simulate step execution
-      return {
-        outputs: {
-          _mock: true,
-          _stepType: step.type,
-          _stepId: step.id,
-          _message: `Default handler for ${step.type}: step executed successfully`,
-        },
-      };
-    },
-  };
-}
 
 /** Execute a single step with retry and timeout policy. */
 export async function executeStep(
@@ -104,7 +87,26 @@ export async function executeStep(
   context: StepExecutionContext,
 ): Promise<StepRunResult> {
   const startedAt = new Date().toISOString();
-  const handler = stepHandlers.get(step.type) ?? getDefaultHandler(step.type);
+  const handler = stepHandlers.get(step.type);
+  if (!handler) {
+    return {
+      stepId: step.id,
+      status: StepRunStatus.Failed,
+      startedAt,
+      completedAt: new Date().toISOString(),
+      error: createTypedError({
+        code: 'STEP.NO_HANDLER',
+        message: `No handler registered for step type "${step.type}". Register a handler with registerStepHandler() before executing this workflow.`,
+        stepId: step.id,
+        retryable: false,
+        suggestedFixes: [
+          { type: 'REGISTER_HANDLER', params: { stepType: step.type }, description: `Register a step handler for "${step.type}"` },
+        ],
+      }),
+      attempts: 0,
+      durationMs: 0,
+    };
+  }
 
   let lastError: TypedError | undefined;
 
