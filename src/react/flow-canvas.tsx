@@ -290,7 +290,7 @@ export function FlowCanvas({
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search steps..."
-            className="bg-transparent text-sm text-white placeholder-gray-500 outline-none w-40"
+            className="bg-transparent text-sm text-white placeholder-gray-500 outline-none flex-1 min-w-[100px]"
             autoFocus
           />
           {searchQuery && (
@@ -392,11 +392,11 @@ export function FlowCanvas({
                 height: node.height,
               }}
             >
-              <div className="flex items-center gap-2 w-full">
-                <span className={`text-xs px-1.5 py-0.5 rounded ${visuals.bg} ${visuals.color}`}>
+              <div className="flex items-center gap-2 w-full min-w-0">
+                <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${visuals.bg} ${visuals.color}`}>
                   {visuals.shortLabel}
                 </span>
-                <span className="text-sm text-white truncate flex-1 text-left">
+                <span className="text-sm text-white truncate flex-1 min-w-0 text-left">
                   {step.name}
                 </span>
               </div>

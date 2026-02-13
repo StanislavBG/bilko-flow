@@ -316,7 +316,7 @@ function CompactThreadRow({
                 </span>
               </button>
               {i < thread.steps.length - 1 && (
-                <div className="h-px w-2 flex-shrink-0 bg-gray-600" />
+                <div className="h-px flex-1 min-w-[4px] max-w-[16px] bg-gray-600" />
               )}
             </React.Fragment>
           ))}
@@ -393,7 +393,7 @@ function ExpandedThreadRow({
           {completedCount}/{thread.steps.length}
         </span>
         {/* Mini progress bar in header */}
-        <div className="w-12 h-1 bg-gray-700 rounded-full overflow-hidden flex-shrink-0">
+        <div className="flex-1 min-w-[32px] max-w-[64px] h-1 bg-gray-700 rounded-full overflow-hidden flex-shrink-0">
           <div
             className={`h-full rounded-full transition-all duration-300 ${
               thread.status === 'error' ? theme.errorColor : theme.completedColor
@@ -408,7 +408,7 @@ function ExpandedThreadRow({
       {/* Expanded step cards */}
       {!collapsed && (
         <div className={`${isFull ? 'px-3 pb-2.5' : 'px-2.5 pb-2'}`}>
-          <div className={`flex items-center gap-0 overflow-x-auto ${isFull ? 'pt-1' : 'pt-0.5'}`}>
+          <div className={`flex items-center gap-1 overflow-hidden ${isFull ? 'pt-1' : 'pt-0.5'}`}>
             {thread.steps.map((step, i) => {
               const bgColor = resolveStepBg(step, theme);
               const typeIcon = step.type ? getTypeIcon(step.type) : null;
@@ -418,8 +418,8 @@ function ExpandedThreadRow({
                 <React.Fragment key={step.id}>
                   <button
                     className={`
-                      flex items-center gap-1.5 rounded-md border px-2 py-1 min-w-0
-                      transition-all duration-200 text-left flex-shrink-0
+                      flex-1 min-w-0 flex items-center gap-1.5 rounded-md border px-2 py-1
+                      transition-all duration-200 text-left
                       ${isActive
                         ? 'border-blue-500/40 bg-gray-700/60'
                         : step.status === 'error'
@@ -450,7 +450,7 @@ function ExpandedThreadRow({
                         <span>{i + 1}</span>
                       )}
                     </div>
-                    <span className={`text-xs truncate max-w-[80px] ${
+                    <span className={`text-xs truncate ${
                       isActive ? 'text-white font-medium' :
                       step.status === 'complete' ? 'text-gray-400' :
                       step.status === 'error' ? 'text-red-300' :
