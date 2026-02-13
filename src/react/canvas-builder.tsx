@@ -225,7 +225,7 @@ export function CanvasBuilder({
         {messages.map((msg, i) => (
           <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
-              className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+              className={`max-w-[90%] rounded-lg px-3 py-2 text-sm break-words ${
                 msg.role === 'user'
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-800 text-gray-200'

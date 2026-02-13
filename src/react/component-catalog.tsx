@@ -154,15 +154,15 @@ export function ComponentCatalog({
               <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Inputs</h4>
               <div className="space-y-1.5">
                 {selectedDef.inputs.map(field => (
-                  <div key={field.name} className="flex items-start gap-2 text-xs">
-                    <code className="shrink-0 px-1.5 py-0.5 rounded bg-gray-800 text-blue-400 font-mono">
+                  <div key={field.name} className="flex flex-wrap items-start gap-x-2 gap-y-0.5 text-xs">
+                    <code className="px-1.5 py-0.5 rounded bg-gray-800 text-blue-400 font-mono">
                       {field.name}
                     </code>
-                    <span className="text-gray-500">{field.type}</span>
+                    <span className="text-gray-500 flex-shrink-0">{field.type}</span>
                     {field.required && (
-                      <span className="text-red-400 text-[10px]">required</span>
+                      <span className="text-red-400 text-[10px] flex-shrink-0">required</span>
                     )}
-                    <span className="text-gray-400 ml-auto">{field.description}</span>
+                    <span className="text-gray-400 flex-1 min-w-0">{field.description}</span>
                   </div>
                 ))}
               </div>
@@ -175,12 +175,12 @@ export function ComponentCatalog({
               <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Outputs</h4>
               <div className="space-y-1.5">
                 {selectedDef.outputs.map(field => (
-                  <div key={field.name} className="flex items-start gap-2 text-xs">
-                    <code className="shrink-0 px-1.5 py-0.5 rounded bg-gray-800 text-green-400 font-mono">
+                  <div key={field.name} className="flex flex-wrap items-start gap-x-2 gap-y-0.5 text-xs">
+                    <code className="px-1.5 py-0.5 rounded bg-gray-800 text-green-400 font-mono">
                       {field.name}
                     </code>
-                    <span className="text-gray-500">{field.type}</span>
-                    <span className="text-gray-400 ml-auto">{field.description}</span>
+                    <span className="text-gray-500 flex-shrink-0">{field.type}</span>
+                    <span className="text-gray-400 flex-1 min-w-0">{field.description}</span>
                   </div>
                 ))}
               </div>

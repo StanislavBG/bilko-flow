@@ -143,9 +143,9 @@ export function FlowProgressVertical(props: FlowProgressVerticalProps) {
           return (
             <div key={step.id} className="flex gap-3 relative" data-testid={`vertical-step-${step.id}`}>
               {/* Rail column: icon + connector */}
-              <div className="flex flex-col items-center flex-shrink-0 w-6">
+              <div className="flex flex-col items-center flex-shrink-0" style={{ width: '1.5rem' }}>
                 {/* Status icon */}
-                <div className="flex items-center justify-center w-6 h-6 z-10">
+                <div className="flex items-center justify-center w-full h-6 z-10">
                   {step.status === 'complete' ? (
                     <CheckCircle2 size={18} className="text-green-500" />
                   ) : step.status === 'active' ? (

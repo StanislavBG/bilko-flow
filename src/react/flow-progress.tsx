@@ -114,7 +114,7 @@ function EllipsisDropdown({
 
       {open && (
         <div
-          className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-20 bg-gray-800 border border-gray-700 rounded-lg shadow-lg py-1 min-w-[140px] max-w-[220px] max-h-[200px] overflow-y-auto"
+          className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-20 bg-gray-800 border border-gray-700 rounded-lg shadow-lg py-1 w-max min-w-[120px] max-w-[280px] max-h-[200px] overflow-y-auto"
         >
           {hiddenSteps.map(({ index, step }) => {
             const dotColor = step.status === 'complete'
@@ -215,7 +215,7 @@ function FullMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTheme 
       </div>
 
       {/* Stepper row */}
-      <div className="flex items-center justify-center gap-0 overflow-hidden">
+      <div className="flex items-center gap-0 w-full overflow-hidden">
         {windowItems.map((item, i) => {
           if (item.kind === 'ellipsis') {
             return (
@@ -229,7 +229,7 @@ function FullMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTheme 
                   />
                 </div>
                 {i < windowItems.length - 1 && (
-                  <div className="h-1 flex-1 min-w-[16px] max-w-[40px] rounded-full mx-1 mt-0 bg-gray-700" />
+                  <div className="h-1 flex-1 min-w-[12px] rounded-full mx-1 mt-0 bg-gray-700" />
                 )}
               </React.Fragment>
             );
@@ -314,7 +314,7 @@ function FullMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTheme 
                 {displayLabel ? (
                   <span
                     className={`
-                      mt-1.5 text-xs text-center max-w-[80px] truncate
+                      mt-1.5 text-xs text-center max-w-[120px] truncate
                       ${textColor}
                     `}
                   >
@@ -329,7 +329,7 @@ function FullMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTheme 
               {i < windowItems.length - 1 && (
                 <div
                   className={`
-                    h-1 flex-1 min-w-[16px] max-w-[40px] rounded-full mx-1 mt-[-20px]
+                    h-1 flex-1 min-w-[12px] rounded-full mx-1 mt-[-20px]
                     transition-colors duration-300
                     ${resolveConnectorColor(step, theme)}
                   `}
@@ -401,7 +401,7 @@ function CompactMode(props: FlowProgressProps & { resolvedTheme: FlowProgressThe
             {completedCount} of {steps.length}
           </span>
           {/* Mini progress bar */}
-          <div className="flex-1 h-0.5 bg-gray-700 rounded-full overflow-hidden max-w-[80px]">
+          <div className="flex-1 h-0.5 bg-gray-700 rounded-full overflow-hidden max-w-[120px]">
             <div
               className={`h-full rounded-full transition-all duration-300 ${theme.completedColor}`}
               style={{ width: `${steps.length > 0 ? (completedCount / steps.length) * 100 : 0}%` }}
@@ -423,7 +423,7 @@ function CompactMode(props: FlowProgressProps & { resolvedTheme: FlowProgressThe
                   theme={theme}
                 />
                 {i < windowItems.length - 1 && (
-                  <div className="h-px w-4 flex-shrink-0 bg-gray-600" />
+                  <div className="h-px flex-1 min-w-[8px] max-w-[24px] bg-gray-600" />
                 )}
               </React.Fragment>
             );
@@ -449,7 +449,7 @@ function CompactMode(props: FlowProgressProps & { resolvedTheme: FlowProgressThe
                   {rendered}
                   {i < windowItems.length - 1 && (
                     <div
-                      className={`h-0.5 w-4 flex-shrink-0 ${resolveConnectorColor(step, theme)}`}
+                      className={`h-0.5 flex-1 min-w-[8px] max-w-[24px] ${resolveConnectorColor(step, theme)}`}
                     />
                   )}
                 </React.Fragment>
@@ -512,7 +512,7 @@ function CompactMode(props: FlowProgressProps & { resolvedTheme: FlowProgressThe
               {i < windowItems.length - 1 && (
                 <div
                   className={`
-                    h-0.5 w-4 flex-shrink-0
+                    h-0.5 flex-1 min-w-[8px] max-w-[24px]
                     ${resolveConnectorColor(step, theme)}
                   `}
                 />
@@ -603,7 +603,7 @@ function ExpandedMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
       </div>
 
       {/* Expanded step cards row */}
-      <div className="flex items-stretch gap-0 w-full overflow-hidden" data-testid="expanded-step-cards">
+      <div className="flex items-stretch gap-1 w-full overflow-hidden" data-testid="expanded-step-cards">
         {windowItems.map((item, i) => {
           if (item.kind === 'ellipsis') {
             return (

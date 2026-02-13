@@ -79,7 +79,7 @@ function JsonBlock({ data, label }: { data: unknown; label: string }) {
 /** Execution stats row */
 function ExecutionStats({ execution }: { execution: StepExecution }) {
   return (
-    <div className="flex flex-wrap gap-4 text-sm">
+    <div className="flex flex-wrap gap-3 text-sm">
       {execution.durationMs !== undefined && (
         <div className="flex items-center gap-1.5 text-gray-400">
           <Clock size={14} />
@@ -142,7 +142,7 @@ export function StepDetail({ step, flow, execution, className }: StepDetailProps
     <div className={`flex flex-col bg-gray-900 border border-gray-700 rounded-lg overflow-hidden ${className ?? ''}`}>
       {/* Hero section */}
       <div className="p-4 border-b border-gray-700">
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-3 min-w-0">
           <div className={`w-10 h-10 rounded-lg ${visuals.bg} flex items-center justify-center flex-shrink-0`}>
             <span className={`text-lg ${visuals.color}`}>{visuals.shortLabel.charAt(0)}</span>
           </div>
@@ -196,7 +196,7 @@ export function StepDetail({ step, flow, execution, className }: StepDetailProps
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`
-              px-4 py-2 text-sm font-medium transition-colors
+              flex-1 px-3 py-2 text-sm font-medium text-center transition-colors
               ${activeTab === tab.id
                 ? 'text-white border-b-2 border-blue-500'
                 : 'text-gray-400 hover:text-gray-200'
@@ -266,7 +266,7 @@ export function StepDetail({ step, flow, execution, className }: StepDetailProps
                     <h4 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">
                       Token Usage
                     </h4>
-                    <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div className="grid grid-cols-3 gap-2 text-xs" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))' }}>
                       <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-2 text-center">
                         <div className="text-gray-400">Prompt</div>
                         <div className="text-white font-mono">{execution.usage.promptTokens.toLocaleString()}</div>
