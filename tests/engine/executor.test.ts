@@ -6,6 +6,7 @@ import { RunStatus, StepRunStatus } from '../../src/domain/run';
 import { Workflow, WorkflowStatus } from '../../src/domain/workflow';
 import { TenantScope } from '../../src/domain/account';
 import { Store } from '../../src/storage/store';
+import { registerStepHandler } from '../../src/engine/step-runner';
 
 const SCOPE: TenantScope = {
   accountId: 'acct_1',
@@ -60,6 +61,21 @@ describe('WorkflowExecutor', () => {
     store = createMemoryStore();
     publisher = new DataPlanePublisher(store);
     executor = new WorkflowExecutor(store, publisher);
+
+    // Register handlers for the step types used in tests.
+    // Without registered handlers, steps fail fast with STEP.NO_HANDLER.
+    registerStepHandler({
+      type: 'transform.map',
+      async execute(step) {
+        return { outputs: { result: step.inputs.data } };
+      },
+    });
+    registerStepHandler({
+      type: 'transform.filter',
+      async execute(step) {
+        return { outputs: { result: step.inputs.filter } };
+      },
+    });
   });
 
   test('creates a run for a valid workflow', async () => {
@@ -95,6 +111,34 @@ describe('WorkflowExecutor', () => {
     expect(completedRun.stepResults['step_2'].status).toBe(StepRunStatus.Succeeded);
     expect(completedRun.provenanceId).toBeTruthy();
     expect(completedRun.attestationId).toBeTruthy();
+  });
+
+  test('fails run when step has no registered handler', async () => {
+    const workflow = makeWorkflow();
+    workflow.steps = [
+      {
+        id: 'step_1',
+        workflowId: workflow.id,
+        name: 'AI Step',
+        type: 'ai.summarize',
+        dependsOn: [],
+        inputs: { text: 'summarize this' },
+        policy: { timeoutMs: 30000, maxAttempts: 1 },
+      },
+    ];
+    workflow.entryStepId = 'step_1';
+    await store.workflows.create(workflow);
+
+    const run = await executor.createRun({
+      workflowId: workflow.id,
+      ...SCOPE,
+    });
+
+    const completedRun = await executor.executeRun(run.id, SCOPE);
+
+    expect(completedRun.status).toBe(RunStatus.Failed);
+    expect(completedRun.stepResults['step_1'].status).toBe(StepRunStatus.Failed);
+    expect(completedRun.stepResults['step_1'].error?.code).toBe('STEP.NO_HANDLER');
   });
 
   test('throws for non-existent workflow', async () => {

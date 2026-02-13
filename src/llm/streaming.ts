@@ -42,7 +42,7 @@ export interface StreamOptions {
   model: string;
   messages: ChatMessage[];
   systemPrompt?: string;
-  apiKey?: string;
+  apiKey: string;
   baseUrl?: string;
   maxTokens?: number;
   temperature?: number;
@@ -71,6 +71,12 @@ export function getStreamAdapter(provider: LLMProvider): StreamAdapter | undefin
  * Throws if no stream adapter is registered for the provider.
  */
 export function createLLMStream(options: StreamOptions): AsyncIterable<StreamChunk> {
+  if (!options.apiKey) {
+    throw new LLMProviderError(
+      `API key is required for streaming provider "${options.provider}". Provide a valid API key.`,
+      401,
+    );
+  }
   const adapter = streamAdapters.get(options.provider);
   if (!adapter) {
     throw new LLMProviderError(

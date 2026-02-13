@@ -21,7 +21,6 @@ describe('LLMPlanner', () => {
       model: 'test-model',
       apiKey: 'test-key',
       temperature: 0.1,
-      maxRetries: 1,
     });
   });
 

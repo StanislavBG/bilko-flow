@@ -44,6 +44,7 @@ describe('createLLMStream', () => {
       provider: 'ollama',
       model: 'llama3',
       messages: [{ role: 'user', content: 'Hi' }],
+      apiKey: 'test-key',
     });
 
     expect(stream).toBeDefined();
@@ -56,6 +57,20 @@ describe('createLLMStream', () => {
         provider: 'custom',
         model: 'test',
         messages: [{ role: 'user', content: 'test' }],
+        apiKey: 'test-key',
+      }),
+    ).toThrow(LLMProviderError);
+  });
+
+  test('throws LLMProviderError when apiKey is empty', () => {
+    registerStreamAdapter('ollama', createMockStreamAdapter([]));
+
+    expect(() =>
+      createLLMStream({
+        provider: 'ollama',
+        model: 'llama3',
+        messages: [{ role: 'user', content: 'Hi' }],
+        apiKey: '',
       }),
     ).toThrow(LLMProviderError);
   });
@@ -72,6 +87,7 @@ describe('createLLMStream', () => {
       provider: 'ollama',
       model: 'llama3',
       messages: [{ role: 'user', content: 'What is the answer?' }],
+      apiKey: 'test-key',
     });
 
     const collected: StreamChunk[] = [];
@@ -98,6 +114,7 @@ describe('collectStream', () => {
       provider: 'ollama',
       model: 'test',
       messages: [],
+      apiKey: 'test-key',
     });
 
     const result = await collectStream(stream);
@@ -120,6 +137,7 @@ describe('collectStream', () => {
       provider: 'ollama',
       model: 'test',
       messages: [],
+      apiKey: 'test-key',
     });
 
     const result = await collectStream(stream);
@@ -133,6 +151,7 @@ describe('collectStream', () => {
       provider: 'ollama',
       model: 'test',
       messages: [],
+      apiKey: 'test-key',
     });
 
     const result = await collectStream(stream);
@@ -149,6 +168,7 @@ describe('collectStream', () => {
       provider: 'ollama',
       model: 'test',
       messages: [],
+      apiKey: 'test-key',
     });
 
     const result = await collectStream(stream);
