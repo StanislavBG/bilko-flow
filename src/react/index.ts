@@ -36,6 +36,11 @@
  *     • "full"      → Wide dedicated areas (> 900px). Large numbered circles,
  *                     phase labels, progress track, header with counter.
  *                     Parallel threads render as full lanes with numbered steps.
+ *     • "pipeline"  → Deploy/CI-style progress (≥ 500px width). Large stage
+ *                     circles on a continuous track with prominent labels.
+ *                     Best for deployment, publish, and promotion workflows.
+ *                     Configure via `pipelineConfig` prop (stage size, numbers,
+ *                     duration display, track style).
  *     • "auto"      → When the container width is dynamic or unknown.
  *                     Set `autoBreakpoint` to the px threshold that best fits
  *                     the layout (default 480). Narrow → vertical, wide → expanded.
@@ -68,6 +73,9 @@
  *     that fork into concurrent branches. Up to 5 threads rendered.
  *   - `parallelConfig` (FlowProgress): Control maxVisible threads (≤5),
  *     auto-collapse behavior, and collapse delay timing.
+ *   - `pipelineConfig` (FlowProgress mode="pipeline"): Control stage circle
+ *     size, whether to show stage numbers or type icons, duration labels,
+ *     and continuous vs segmented track style.
  *   - `onThreadToggle` (FlowProgress): Callback for thread expand/collapse.
  *   - `className` (all components): Use for sizing constraints, margins,
  *     and overflow behavior in the host layout.
@@ -234,4 +242,5 @@ export type {
   FlowCardProps,
   ParallelThread,
   ParallelConfig,
+  PipelineConfig,
 } from './types';

@@ -49,7 +49,7 @@ import {
   MoreHorizontal,
   ChevronRight,
 } from 'lucide-react';
-import type { FlowProgressProps, FlowProgressStep, FlowProgressTheme } from './types';
+import type { FlowProgressProps, FlowProgressStep, FlowProgressTheme, PipelineConfig } from './types';
 import { mergeTheme } from './step-type-config';
 import { ParallelThreadsSection } from './parallel-threads';
 import { FlowProgressVertical } from './flow-progress-vertical';
@@ -759,6 +759,215 @@ function ExpandedMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
   );
 }
 
+/** Pipeline mode: clean deploy/CI-style horizontal progress with large stage indicators */
+function PipelineMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTheme }) {
+  const { steps, label, status, activity, onReset, onStepClick, stepRenderer, pipelineConfig } = props;
+  const theme = props.resolvedTheme;
+
+  const config: Required<Omit<PipelineConfig, 'stageDurations'>> & Pick<PipelineConfig, 'stageDurations'> = {
+    showDuration: pipelineConfig?.showDuration ?? false,
+    showStageNumbers: pipelineConfig?.showStageNumbers ?? true,
+    continuousTrack: pipelineConfig?.continuousTrack ?? true,
+    stageSize: pipelineConfig?.stageSize ?? 40,
+    stageDurations: pipelineConfig?.stageDurations,
+  };
+
+  const completedCount = steps.filter(s => s.status === 'complete').length;
+  const hasError = steps.some(s => s.status === 'error');
+  const sLabel = statusLabel(status, steps);
+
+  // Track progress: fraction of completed stages
+  const progressFraction = steps.length > 0 ? completedCount / steps.length : 0;
+
+  return (
+    <div className="w-full max-w-full rounded-lg border border-gray-700 bg-gray-900 p-5 overflow-hidden" data-testid="pipeline-mode">
+      {/* Header row */}
+      <div className="flex items-center justify-between mb-5 min-w-0">
+        <div className="flex items-center gap-2.5 min-w-0 overflow-hidden">
+          <span
+            className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${statusDotClass(status, theme)}`}
+            data-testid="status-dot"
+          />
+          {label && (
+            <span className="font-semibold text-white text-sm">{label}</span>
+          )}
+          <span className="text-gray-400 text-sm">{sLabel}</span>
+          <span className="text-gray-500 text-xs ml-1">
+            {completedCount}/{steps.length}
+          </span>
+        </div>
+        {onReset && (
+          <button
+            onClick={onReset}
+            className="p-1 rounded hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
+            aria-label="Reset flow"
+          >
+            <RotateCcw size={16} />
+          </button>
+        )}
+      </div>
+
+      {/* Pipeline stages row */}
+      <div className="relative flex items-start w-full" data-testid="pipeline-stages">
+        {/* Background track line (continuous) */}
+        {config.continuousTrack && steps.length > 1 && (
+          <div
+            className="absolute bg-gray-700 rounded-full"
+            style={{
+              top: `${config.stageSize / 2 - 2}px`,
+              left: `${config.stageSize / 2}px`,
+              right: `${config.stageSize / 2}px`,
+              height: '4px',
+            }}
+            data-testid="pipeline-track-bg"
+          >
+            {/* Filled portion of the track */}
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                hasError ? theme.errorColor : theme.completedColor
+              }`}
+              style={{
+                width: steps.length > 1
+                  ? `${(completedCount / (steps.length - 1)) * 100}%`
+                  : '0%',
+              }}
+              data-testid="pipeline-track-fill"
+            />
+          </div>
+        )}
+
+        {/* Stage indicators */}
+        {steps.map((step, i) => {
+          const isActive = step.status === 'active';
+          const isComplete = step.status === 'complete';
+          const isError = step.status === 'error';
+          const bgColor = resolveStepBg(step, theme);
+          const textColor = resolveStepTextColor(step, theme, isActive);
+          const typeIcon = step.type ? getTypeIcon(step.type) : null;
+          const duration = config.showDuration && config.stageDurations?.[step.id];
+
+          // Custom step renderer
+          if (stepRenderer) {
+            const rendered = stepRenderer(step, {
+              index: i,
+              isActive,
+              bgColor,
+              textColor,
+              mode: 'pipeline',
+            });
+            if (rendered) {
+              return (
+                <div key={step.id} className="flex-1 flex flex-col items-center min-w-0 relative z-10">
+                  {rendered}
+                </div>
+              );
+            }
+          }
+
+          return (
+            <button
+              key={step.id}
+              className="flex-1 flex flex-col items-center min-w-0 relative z-10 group"
+              onClick={() => onStepClick?.(step.id)}
+              aria-label={`Stage ${i + 1}: ${step.label}`}
+            >
+              {/* Stage circle */}
+              <div
+                className={`
+                  rounded-full flex items-center justify-center
+                  transition-all duration-300 flex-shrink-0
+                  ${bgColor} text-white
+                  ${isActive
+                    ? 'ring-4 ring-opacity-30 scale-110'
+                    : ''
+                  }
+                  ${!isActive && !isComplete && !isError
+                    ? 'border-2 border-gray-600'
+                    : ''
+                  }
+                `}
+                style={{
+                  width: `${config.stageSize}px`,
+                  height: `${config.stageSize}px`,
+                  ...(isActive ? {
+                    boxShadow: `0 0 0 4px rgba(34, 197, 94, 0.3)`,
+                  } : {}),
+                }}
+              >
+                {isComplete ? (
+                  <CheckCircle2 size={config.stageSize * 0.5} />
+                ) : isError ? (
+                  <AlertCircle size={config.stageSize * 0.5} />
+                ) : isActive ? (
+                  typeIcon ? (
+                    <span className="animate-pulse flex items-center justify-center">{typeIcon}</span>
+                  ) : (
+                    <Loader2 size={config.stageSize * 0.45} className="animate-spin" />
+                  )
+                ) : config.showStageNumbers ? (
+                  <span className="text-sm font-medium text-gray-400">{i + 1}</span>
+                ) : typeIcon ? (
+                  <span className="flex items-center justify-center text-gray-400">{typeIcon}</span>
+                ) : (
+                  <Circle size={config.stageSize * 0.4} className="text-gray-500" />
+                )}
+              </div>
+
+              {/* Stage label */}
+              <span
+                className={`
+                  mt-2.5 text-xs text-center leading-tight max-w-[100px] truncate
+                  transition-colors duration-200
+                  ${isActive ? 'text-white font-semibold' :
+                    isComplete ? 'text-gray-300 font-medium' :
+                    isError ? 'text-red-400 font-medium' :
+                    'text-gray-500'}
+                  group-hover:text-gray-200
+                `}
+              >
+                {step.label}
+              </span>
+
+              {/* Duration label (optional) */}
+              {duration && (
+                <span className="mt-0.5 text-[10px] text-gray-500">
+                  {duration}
+                </span>
+              )}
+
+              {/* Active stage activity pulse */}
+              {isActive && activity && (
+                <span className="mt-1 text-[10px] text-gray-400 truncate max-w-[100px] text-center">
+                  {activity}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Bottom segmented progress track */}
+      <div className="mt-5 h-1 w-full bg-gray-800 rounded-full overflow-hidden flex" data-testid="pipeline-progress-bar">
+        {steps.map((step, i) => {
+          const segColor = resolveStepBg(step, theme);
+          return (
+            <div
+              key={i}
+              className={`
+                h-full transition-all duration-500
+                ${step.status === 'pending' ? 'bg-gray-800' : segColor}
+                ${i === 0 ? 'rounded-l-full' : ''}
+                ${i === steps.length - 1 ? 'rounded-r-full' : ''}
+              `}
+              style={{ width: `${100 / steps.length}%` }}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /**
  * FlowProgress — Multi-mode progress visualization with sliding window,
  * theme-first customization, and parallel thread support.
@@ -779,6 +988,9 @@ function ExpandedMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
  * - "vertical": Top-to-bottom timeline with vertical connector rail and
  *   expandable ellipsis. Best for mobile (< 480px) where vertical space
  *   is abundant.
+ * - "pipeline": Clean deploy/CI-style horizontal progress with large stage
+ *   indicators on a continuous track. Best for deployment, publish, and
+ *   promotion workflows (≥ 500px). Configure via `pipelineConfig`.
  * - "auto": Dynamically selects "vertical" (narrow) or "expanded" (wide)
  *   based on container width. Use when container size is unknown.
  *
@@ -899,11 +1111,13 @@ export function FlowProgress(props: FlowProgressProps): React.JSX.Element {
             theme={resolvedTheme}
             radius={props.radius}
           />
-        : effectiveMode === 'full'
-          ? <FullMode {...props} resolvedTheme={resolvedTheme} />
-          : effectiveMode === 'expanded'
-            ? <ExpandedMode {...props} resolvedTheme={resolvedTheme} />
-            : <CompactMode {...props} resolvedTheme={resolvedTheme} />
+        : effectiveMode === 'pipeline'
+          ? <PipelineMode {...props} resolvedTheme={resolvedTheme} />
+          : effectiveMode === 'full'
+            ? <FullMode {...props} resolvedTheme={resolvedTheme} />
+            : effectiveMode === 'expanded'
+              ? <ExpandedMode {...props} resolvedTheme={resolvedTheme} />
+              : <CompactMode {...props} resolvedTheme={resolvedTheme} />
       }
     </div>
   );

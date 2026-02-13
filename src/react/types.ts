@@ -183,6 +183,60 @@ export interface ParallelThread {
  * />
  * ```
  */
+/**
+ * Configuration for the "pipeline" mode visual appearance.
+ *
+ * Pipeline mode renders a clean, horizontal deploy-style progress bar
+ * inspired by CI/CD pipeline UIs (Provision → Build → Deploy → Promote).
+ * Each step appears as a labeled stage with prominent status indicators
+ * connected by a continuous track.
+ *
+ * @example
+ * ```tsx
+ * <FlowProgress
+ *   mode="pipeline"
+ *   steps={[
+ *     { id: '1', label: 'Provision', status: 'complete' },
+ *     { id: '2', label: 'Security Scan', status: 'complete' },
+ *     { id: '3', label: 'Build', status: 'active' },
+ *     { id: '4', label: 'Bundle', status: 'pending' },
+ *     { id: '5', label: 'Promote', status: 'pending' },
+ *   ]}
+ *   pipelineConfig={{ showDuration: true, showStageNumbers: false }}
+ *   status="running"
+ *   label="Production Deploy"
+ * />
+ * ```
+ */
+export interface PipelineConfig {
+  /**
+   * Show duration/elapsed time beneath active and completed stages.
+   * Default: false.
+   */
+  showDuration?: boolean;
+  /**
+   * Show stage numbers (1, 2, 3...) inside pending stage circles.
+   * Default: true.
+   */
+  showStageNumbers?: boolean;
+  /**
+   * Use a filled continuous track between stages instead of segmented connectors.
+   * Default: true.
+   */
+  continuousTrack?: boolean;
+  /**
+   * Size of stage indicator circles in px.
+   * Default: 40.
+   */
+  stageSize?: number;
+  /**
+   * Custom labels for stage durations. Map step ID → duration string.
+   * Only shown when `showDuration` is true.
+   * @example { 'build': '2m 34s', 'deploy': '45s' }
+   */
+  stageDurations?: Record<string, string>;
+}
+
 export interface ParallelConfig {
   /**
    * Maximum number of threads rendered simultaneously.
@@ -248,7 +302,7 @@ export type FlowProgressStepRenderer = (
     isActive: boolean;
     bgColor: string;
     textColor: string;
-    mode: 'full' | 'compact' | 'expanded';
+    mode: 'full' | 'compact' | 'expanded' | 'pipeline';
   },
 ) => React.ReactNode;
 
@@ -330,8 +384,11 @@ export interface FlowProgressProps {
    * - "auto": Dynamically selects "expanded" or "vertical" based on container width
    * - "vertical": Top-to-bottom timeline with vertical connector rail, ideal for
    *   mobile screens (< 480px) or narrow containers with abundant vertical space
+   * - "pipeline": Clean deploy/CI-style horizontal progress with large stage
+   *   indicators, continuous track, and prominent labels. Best for deployment
+   *   flows, publish pipelines, and promotion workflows (≥ 500px width).
    */
-  mode: 'full' | 'compact' | 'expanded' | 'auto' | 'vertical';
+  mode: 'full' | 'compact' | 'expanded' | 'auto' | 'vertical' | 'pipeline';
   /** Steps to display, in order (main chain before any fork point) */
   steps: FlowProgressStep[];
   /**
@@ -351,6 +408,12 @@ export interface FlowProgressProps {
    * Controls max visible threads, auto-collapse, and timing.
    */
   parallelConfig?: ParallelConfig;
+  /**
+   * Configuration for "pipeline" mode appearance.
+   * Controls stage size, numbering, duration display, and track style.
+   * Only applies when `mode` is "pipeline".
+   */
+  pipelineConfig?: PipelineConfig;
   /**
    * Called when user clicks to expand or collapse a parallel thread.
    * Receives the thread ID and the new collapsed state.
