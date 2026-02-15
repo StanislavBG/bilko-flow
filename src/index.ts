@@ -1,24 +1,22 @@
 /**
  * Bilko Flow — Deterministic Workflow Creation and Execution Library
  *
- * Entry point for the application server (library explorer / reference UI).
- * The primary value of this project is the library itself — the typed DSL,
- * determinism model, planner protocol, and RBAC system — designed for
- * consumption by AI agents and workflow orchestrators.
+ * Core library for typed workflow DSL, determinism model, planner protocol,
+ * step execution, provenance tracking, and attestation.
  *
- * This server is a reference implementation that showcases the library.
+ * NOTE: This is the library entry point. There is no SaaS/multi-tenant
+ * layer here — no accounts, auth, RBAC, or audit. Consuming applications
+ * own their own identity and tenancy models.
  */
 
-import { createApp, createAppContext, seedDefaultUser } from './server';
+import { createApp, createAppContext } from './server';
 
 const PORT = parseInt(process.env.PORT ?? '5000', 10);
 
 const context = createAppContext();
 const app = createApp(context);
 
-seedDefaultUser(context).then(() => {
-  app.listen(PORT);
-});
+app.listen(PORT);
 
 // Public exports for programmatic use
 export { createApp, createAppContext } from './server';
@@ -29,6 +27,5 @@ export * from './execution';
 export * from './storage';
 export * from './planner';
 export * from './data-plane';
-export * from './audit';
 export * from './notifications';
 export * from './llm';

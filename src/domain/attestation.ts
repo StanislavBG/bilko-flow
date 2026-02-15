@@ -41,9 +41,10 @@ export interface AttestationStatement {
 export interface Attestation {
   id: string;
   runId: string;
-  accountId: string;
-  projectId: string;
-  environmentId: string;
+  /** Tenant scoping — optional for library (standalone) usage. */
+  accountId?: string;
+  projectId?: string;
+  environmentId?: string;
   status: AttestationStatus;
   subject: AttestationSubject;
   statement: AttestationStatement;

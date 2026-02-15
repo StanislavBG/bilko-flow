@@ -17,9 +17,9 @@ export interface WebhookPayload {
   id: string;
   event: WebhookEventType;
   timestamp: string;
-  accountId: string;
-  projectId: string;
-  environmentId: string;
+  accountId?: string;
+  projectId?: string;
+  environmentId?: string;
   runId: string;
   workflowId: string;
   workflowVersion: number;

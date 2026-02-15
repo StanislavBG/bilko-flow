@@ -12,9 +12,10 @@ import { CompiledStep } from '../dsl/compiler';
 /** Step execution context provided by the engine. */
 export interface StepExecutionContext {
   runId: string;
-  accountId: string;
-  projectId: string;
-  environmentId: string;
+  /** Tenant scoping — optional for library (standalone) usage. */
+  accountId?: string;
+  projectId?: string;
+  environmentId?: string;
   /** Resolved secret values available to the step. */
   secrets: Record<string, string>;
   /** Outputs from upstream steps. */

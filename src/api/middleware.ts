@@ -1,26 +1,29 @@
 /**
- * API Middleware — authentication, RBAC, and error handling.
+ * API Middleware — identity context extraction and error handling.
  */
 
 import { Request, Response, NextFunction } from 'express';
-import { IdentityContext, Permission, RoleBinding, hasPermission } from '../domain/rbac';
 import { TenantScope } from '../domain/account';
-import { apiError, authError, TypedError, createTypedError } from '../domain/errors';
+import { apiError, TypedError, createTypedError } from '../domain/errors';
 import { Store } from '../storage/store';
-import { AuditService } from '../audit/audit-service';
-import { AuditAction, AuditResourceType } from '../domain/audit';
 
-/** Extended request with identity and scope context. */
+/** Identity context extracted from request headers. */
+export interface IdentityContext {
+  identityId: string;
+  identityType: 'user' | 'service-principal';
+  accountId?: string;
+}
+
+/** Extended request with identity and optional scope context. */
 export interface AuthenticatedRequest extends Request {
   identity?: IdentityContext;
   scope?: TenantScope;
-  roleBindings?: RoleBinding[];
 }
 
 /**
  * Default identity middleware.
- * No authentication required — auto-injects identity context from headers
- * or falls back to defaults. This is a library exploration UI.
+ * Extracts identity and optional tenant scope from headers.
+ * No authentication required — this is a library server.
  */
 export function defaultIdentityMiddleware(store: Store) {
   return async (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
@@ -29,18 +32,15 @@ export function defaultIdentityMiddleware(store: Store) {
     const body = (req.body && typeof req.body === 'object') ? req.body as Record<string, unknown> : {};
     const accountId = req.headers['x-account-id'] as string || req.params.accountId || (typeof body.accountId === 'string' ? body.accountId : undefined);
 
-    if (identityId && accountId) {
+    if (identityId) {
       req.identity = {
         identityId,
         identityType: identityType as 'user' | 'service-principal',
-        accountId,
+        ...(accountId ? { accountId } : {}),
       };
-
-      // Load role bindings
-      req.roleBindings = await store.roleBindings.listByIdentity(identityId, accountId);
     }
 
-    // Extract scope from various sources
+    // Extract optional scope from various sources
     const projectId = req.headers['x-project-id'] as string || req.params.projectId || (typeof body.projectId === 'string' ? body.projectId : undefined);
     const environmentId = req.headers['x-environment-id'] as string || req.params.environmentId || (typeof body.environmentId === 'string' ? body.environmentId : undefined);
 
@@ -48,66 +48,6 @@ export function defaultIdentityMiddleware(store: Store) {
       req.scope = { accountId, projectId, environmentId };
     }
 
-    next();
-  };
-}
-
-/** RBAC authorization middleware factory. */
-export function requirePermission(permission: Permission) {
-  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    if (!req.identity || !req.roleBindings) {
-      res.status(401).json(apiError(authError('Authentication required')));
-      return;
-    }
-
-    const scope = {
-      accountId: req.identity.accountId,
-      projectId: req.scope?.projectId,
-      environmentId: req.scope?.environmentId,
-    };
-
-    if (!hasPermission(req.roleBindings, req.identity, permission, scope)) {
-      res.status(403).json(
-        apiError(
-          createTypedError({
-            code: 'AUTH.FORBIDDEN',
-            message: `Insufficient permissions: ${permission}`,
-            retryable: false,
-            details: { requiredPermission: permission },
-          }),
-        ),
-      );
-      return;
-    }
-
-    next();
-  };
-}
-
-/** Audit logging middleware factory. */
-export function auditLog(
-  auditService: AuditService,
-  action: AuditAction,
-  resourceType: AuditResourceType,
-  getResourceId: (req: AuthenticatedRequest) => string,
-) {
-  return async (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
-    if (req.identity) {
-      try {
-        await auditService.record({
-          accountId: req.identity.accountId,
-          projectId: req.scope?.projectId,
-          environmentId: req.scope?.environmentId,
-          actorId: req.identity.identityId,
-          action,
-          resourceType,
-          resourceId: getResourceId(req),
-          outcome: 'success',
-        });
-      } catch {
-        // Audit logging should not block the request
-      }
-    }
     next();
   };
 }

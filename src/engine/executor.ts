@@ -45,13 +45,20 @@ export class WorkflowExecutor {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
+  /**
+   * Derive a TenantScope from an object's optional tenant fields.
+   * Returns undefined when tenant fields are absent (library mode).
+   */
+  private static deriveScope(obj: { accountId?: string; projectId?: string; environmentId?: string }): TenantScope | undefined {
+    if (obj.accountId && obj.projectId && obj.environmentId) {
+      return { accountId: obj.accountId, projectId: obj.projectId, environmentId: obj.environmentId };
+    }
+    return undefined;
+  }
+
   /** Create and start a new run. */
   async createRun(input: CreateRunInput): Promise<Run> {
-    const scope: TenantScope = {
-      accountId: input.accountId,
-      projectId: input.projectId,
-      environmentId: input.environmentId,
-    };
+    const scope = WorkflowExecutor.deriveScope(input);
 
     // Fetch workflow
     const workflow = await this.store.workflows.getById(input.workflowId, scope);
@@ -121,8 +128,12 @@ export class WorkflowExecutor {
     return run;
   }
 
-  /** Execute a run (moves through queued -> running -> terminal). */
-  async executeRun(runId: string, scope: TenantScope, secretValues?: Record<string, string>): Promise<Run> {
+  /**
+   * Execute a run (moves through queued -> running -> terminal).
+   * Scope is optional — when omitted, derived from the run's tenant fields
+   * (or skipped entirely in library mode).
+   */
+  async executeRun(runId: string, scope?: TenantScope, secretValues?: Record<string, string>): Promise<Run> {
     let run = await this.store.runs.getById(runId, scope);
     if (!run) {
       throw new ExecutorError(notFoundError('Run', runId));
@@ -132,11 +143,12 @@ export class WorkflowExecutor {
     run = await this.transitionRun(run, RunStatus.Queued);
     await this.safePublishRunEvent(run, 'run.queued');
 
-    // Fetch and compile workflow
+    // Fetch and compile workflow — derive scope from run if not provided
+    const effectiveScope = scope ?? WorkflowExecutor.deriveScope(run);
     const workflow = await this.store.workflows.getByIdAndVersion(
       run.workflowId,
       run.workflowVersion,
-      scope,
+      effectiveScope,
     );
     if (!workflow) {
       throw new ExecutorError(notFoundError('Workflow', run.workflowId));
@@ -299,8 +311,11 @@ export class WorkflowExecutor {
     return run;
   }
 
-  /** Cancel a run. */
-  async cancelRun(runId: string, scope: TenantScope, canceledBy: string, reason?: string): Promise<Run> {
+  /**
+   * Cancel a run.
+   * Scope is optional — when omitted, lookup is by ID only (library mode).
+   */
+  async cancelRun(runId: string, scope: TenantScope | undefined, canceledBy: string, reason?: string): Promise<Run> {
     const run = await this.store.runs.getById(runId, scope);
     if (!run) {
       throw new ExecutorError(notFoundError('Run', runId));
@@ -321,7 +336,7 @@ export class WorkflowExecutor {
   /** Test a workflow without a full production run. */
   async testWorkflow(
     workflow: Workflow,
-    scope: TenantScope,
+    scope?: TenantScope,
   ): Promise<{ valid: boolean; compilation: { success: boolean; errors: TypedError[] }; determinism?: any }> {
     const compilation = compileWorkflow(workflow);
     return {
@@ -433,11 +448,7 @@ export class WorkflowExecutor {
     plan: CompiledPlan,
     transcript: TranscriptEntry[],
   ): Promise<void> {
-    const scope: TenantScope = {
-      accountId: run.accountId,
-      projectId: run.projectId,
-      environmentId: run.environmentId,
-    };
+    const scope = WorkflowExecutor.deriveScope(run);
 
     const inputHashes: Record<string, HashRecord> = {};
     for (const [stepId, result] of Object.entries(run.stepResults)) {
@@ -451,9 +462,7 @@ export class WorkflowExecutor {
       runId: run.id,
       workflowId: run.workflowId,
       workflowVersion: run.workflowVersion,
-      accountId: run.accountId,
-      projectId: run.projectId,
-      environmentId: run.environmentId,
+      ...(scope ? scope : {}),
       createdAt: new Date().toISOString(),
       determinismGrade: run.determinismGrade ?? DeterminismGrade.BestEffort,
       workflowHash: plan.workflowHash,
@@ -477,18 +486,14 @@ export class WorkflowExecutor {
       type: 'provenance.recorded',
       schemaVersion: '1.0.0',
       timestamp: new Date().toISOString(),
-      ...scope,
+      ...(scope ? scope : {}),
       runId: run.id,
       payload: { provenanceId: provenance.id },
     });
   }
 
   private async generateAttestation(run: Run, plan: CompiledPlan): Promise<void> {
-    const scope: TenantScope = {
-      accountId: run.accountId,
-      projectId: run.projectId,
-      environmentId: run.environmentId,
-    };
+    const scope = WorkflowExecutor.deriveScope(run);
 
     const artifactHashes: Record<string, HashRecord> = {};
     const stepImageDigests: Record<string, string> = {};
@@ -513,13 +518,13 @@ export class WorkflowExecutor {
 
     // HMAC-sign the statement for integrity verification
     const statementJson = JSON.stringify(statement, Object.keys(statement).sort());
-    const signingKey = process.env.BILKO_ATTESTATION_KEY ?? `bilko-dev-key-${scope.accountId}`;
+    const signingKey = process.env.BILKO_ATTESTATION_KEY ?? `bilko-dev-key-${scope?.accountId ?? 'default'}`;
     const signature = createHmac('sha256', signingKey).update(statementJson).digest('hex');
 
     const attestation: Attestation = {
       id: `att_${uuid()}`,
       runId: run.id,
-      ...scope,
+      ...(scope ? scope : {}),
       status: AttestationStatus.Issued,
       subject: {
         runId: run.id,
@@ -530,7 +535,7 @@ export class WorkflowExecutor {
       statement,
       signature,
       signatureAlgorithm: 'hmac-sha256',
-      verificationKeyId: process.env.BILKO_ATTESTATION_KEY ? 'env:BILKO_ATTESTATION_KEY' : `dev:${scope.accountId}`,
+      verificationKeyId: process.env.BILKO_ATTESTATION_KEY ? 'env:BILKO_ATTESTATION_KEY' : `dev:${scope?.accountId ?? 'default'}`,
       issuedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
     };
@@ -543,7 +548,7 @@ export class WorkflowExecutor {
       type: 'attestation.issued',
       schemaVersion: '1.0.0',
       timestamp: new Date().toISOString(),
-      ...scope,
+      ...(scope ? scope : {}),
       runId: run.id,
       attestationId: attestation.id,
       payload: { attestationId: attestation.id },

@@ -53,9 +53,10 @@ export interface Provenance {
   runId: string;
   workflowId: string;
   workflowVersion: number;
-  accountId: string;
-  projectId: string;
-  environmentId: string;
+  /** Tenant scoping — optional for library (standalone) usage. */
+  accountId?: string;
+  projectId?: string;
+  environmentId?: string;
   createdAt: string;
   /** Determinism grade targeted and achieved. */
   determinismGrade: DeterminismGrade;

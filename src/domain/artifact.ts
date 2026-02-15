@@ -28,9 +28,10 @@ export interface Artifact {
   id: string;
   runId: string;
   stepId?: string;
-  accountId: string;
-  projectId: string;
-  environmentId: string;
+  /** Tenant scoping — optional for library (standalone) usage. */
+  accountId?: string;
+  projectId?: string;
+  environmentId?: string;
   type: string;
   pointer: ArtifactPointer;
   metadata: ArtifactMetadata;

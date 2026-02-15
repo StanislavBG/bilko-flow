@@ -2,7 +2,8 @@
  * In-memory storage implementation.
  *
  * Reference implementation for development and testing.
- * All data is scoped to tenant boundaries.
+ * When a TenantScope is provided, data is filtered by tenant boundaries.
+ * When scope is omitted (library mode), lookups return by ID without filtering.
  */
 
 import { Account, Project, Environment, TenantScope } from '../domain/account';
@@ -69,6 +70,23 @@ function deepCopy<T>(obj: T): T {
     return structuredClone(obj);
   }
   return JSON.parse(JSON.stringify(obj));
+}
+
+/**
+ * Match a record against an optional TenantScope.
+ * When scope is undefined (library mode), always returns true — no filtering.
+ * When scope is provided, all three fields must match.
+ */
+function matchesScope(
+  record: { accountId?: string; projectId?: string; environmentId?: string },
+  scope?: TenantScope,
+): boolean {
+  if (!scope) return true;
+  return (
+    record.accountId === scope.accountId &&
+    record.projectId === scope.projectId &&
+    record.environmentId === scope.environmentId
+  );
 }
 
 class MemoryAccountStore implements AccountStore {
@@ -147,21 +165,17 @@ class MemoryWorkflowStore implements WorkflowStore {
     return deepCopy(copy);
   }
 
-  async getById(id: string, scope: TenantScope): Promise<Workflow | null> {
+  async getById(id: string, scope?: TenantScope): Promise<Workflow | null> {
     const wf = this.data.get(id);
     if (!wf) return null;
-    if (wf.accountId !== scope.accountId || wf.projectId !== scope.projectId || wf.environmentId !== scope.environmentId) {
-      return null;
-    }
+    if (!matchesScope(wf, scope)) return null;
     return deepCopy(wf);
   }
 
-  async getByIdAndVersion(id: string, version: number, scope: TenantScope): Promise<Workflow | null> {
+  async getByIdAndVersion(id: string, version: number, scope?: TenantScope): Promise<Workflow | null> {
     const wf = this.versions.get(`${id}:${version}`);
     if (!wf) return null;
-    if (wf.accountId !== scope.accountId || wf.projectId !== scope.projectId || wf.environmentId !== scope.environmentId) {
-      return null;
-    }
+    if (!matchesScope(wf, scope)) return null;
     return deepCopy(wf);
   }
 
@@ -174,12 +188,7 @@ class MemoryWorkflowStore implements WorkflowStore {
   }
 
   async listByScope(scope: TenantScope, options?: ListOptions): Promise<Workflow[]> {
-    const items = [...this.data.values()].filter(
-      (wf) =>
-        wf.accountId === scope.accountId &&
-        wf.projectId === scope.projectId &&
-        wf.environmentId === scope.environmentId,
-    );
+    const items = [...this.data.values()].filter((wf) => matchesScope(wf, scope));
     return applyListOptions(items.map(deepCopy), options);
   }
 
@@ -204,12 +213,10 @@ class MemoryRunStore implements RunStore {
     return deepCopy(run);
   }
 
-  async getById(id: string, scope: TenantScope): Promise<Run | null> {
+  async getById(id: string, scope?: TenantScope): Promise<Run | null> {
     const run = this.data.get(id);
     if (!run) return null;
-    if (run.accountId !== scope.accountId || run.projectId !== scope.projectId || run.environmentId !== scope.environmentId) {
-      return null;
-    }
+    if (!matchesScope(run, scope)) return null;
     return deepCopy(run);
   }
 
@@ -223,22 +230,13 @@ class MemoryRunStore implements RunStore {
 
   async listByWorkflow(workflowId: string, scope: TenantScope, options?: ListOptions): Promise<Run[]> {
     const items = [...this.data.values()].filter(
-      (r) =>
-        r.workflowId === workflowId &&
-        r.accountId === scope.accountId &&
-        r.projectId === scope.projectId &&
-        r.environmentId === scope.environmentId,
+      (r) => r.workflowId === workflowId && matchesScope(r, scope),
     );
     return applyListOptions(items.map(deepCopy), options);
   }
 
   async listByScope(scope: TenantScope, options?: ListOptions): Promise<Run[]> {
-    const items = [...this.data.values()].filter(
-      (r) =>
-        r.accountId === scope.accountId &&
-        r.projectId === scope.projectId &&
-        r.environmentId === scope.environmentId,
-    );
+    const items = [...this.data.values()].filter((r) => matchesScope(r, scope));
     return applyListOptions(items.map(deepCopy), options);
   }
 
@@ -255,22 +253,16 @@ class MemoryArtifactStore implements ArtifactStore {
     return deepCopy(artifact);
   }
 
-  async getById(id: string, scope: TenantScope): Promise<Artifact | null> {
+  async getById(id: string, scope?: TenantScope): Promise<Artifact | null> {
     const art = this.data.get(id);
     if (!art) return null;
-    if (art.accountId !== scope.accountId || art.projectId !== scope.projectId || art.environmentId !== scope.environmentId) {
-      return null;
-    }
+    if (!matchesScope(art, scope)) return null;
     return deepCopy(art);
   }
 
-  async listByRun(runId: string, scope: TenantScope, options?: ListOptions): Promise<Artifact[]> {
+  async listByRun(runId: string, scope?: TenantScope, options?: ListOptions): Promise<Artifact[]> {
     const items = [...this.data.values()].filter(
-      (a) =>
-        a.runId === runId &&
-        a.accountId === scope.accountId &&
-        a.projectId === scope.projectId &&
-        a.environmentId === scope.environmentId,
+      (a) => a.runId === runId && matchesScope(a, scope),
     );
     return applyListOptions(items.map(deepCopy), options);
   }
@@ -299,18 +291,12 @@ class MemoryProvenanceStore implements ProvenanceStore {
     return deepCopy(provenance);
   }
 
-  async getByRunId(runId: string, scope: TenantScope): Promise<Provenance | null> {
+  async getByRunId(runId: string, scope?: TenantScope): Promise<Provenance | null> {
     const id = this.runIdIndex.get(runId);
     if (!id) return null;
     const prov = this.data.get(id);
     if (!prov) return null;
-    if (
-      prov.accountId !== scope.accountId ||
-      prov.projectId !== scope.projectId ||
-      prov.environmentId !== scope.environmentId
-    ) {
-      return null;
-    }
+    if (!matchesScope(prov, scope)) return null;
     return deepCopy(prov);
   }
 }
@@ -328,18 +314,12 @@ class MemoryAttestationStore implements AttestationStore {
     return deepCopy(attestation);
   }
 
-  async getByRunId(runId: string, scope: TenantScope): Promise<Attestation | null> {
+  async getByRunId(runId: string, scope?: TenantScope): Promise<Attestation | null> {
     const id = this.runIdIndex.get(runId);
     if (!id) return null;
     const att = this.data.get(id);
     if (!att) return null;
-    if (
-      att.accountId !== scope.accountId ||
-      att.projectId !== scope.projectId ||
-      att.environmentId !== scope.environmentId
-    ) {
-      return null;
-    }
+    if (!matchesScope(att, scope)) return null;
     return deepCopy(att);
   }
 }
@@ -420,17 +400,12 @@ class MemoryEventStore implements EventStore {
     return deepCopy(event);
   }
 
-  async listByRun(runId: string, scope: TenantScope, options?: ListOptions): Promise<DataPlaneEvent[]> {
+  async listByRun(runId: string, scope?: TenantScope, options?: ListOptions): Promise<DataPlaneEvent[]> {
     const indices = this.runIdIndex.get(runId);
     if (!indices) return [];
     const items = indices
       .map((i) => this.data[i])
-      .filter(
-        (e) =>
-          e.accountId === scope.accountId &&
-          e.projectId === scope.projectId &&
-          e.environmentId === scope.environmentId,
-      );
+      .filter((e) => matchesScope(e, scope));
     return applyListOptions(items.map(deepCopy), options);
   }
 
@@ -438,12 +413,7 @@ class MemoryEventStore implements EventStore {
     scope: TenantScope,
     options?: ListOptions & { eventTypes?: string[] },
   ): Promise<DataPlaneEvent[]> {
-    let items = this.data.filter(
-      (e) =>
-        e.accountId === scope.accountId &&
-        e.projectId === scope.projectId &&
-        e.environmentId === scope.environmentId,
-    );
+    let items = this.data.filter((e) => matchesScope(e, scope));
     if (options?.eventTypes?.length) {
       items = items.filter((e) => options.eventTypes!.includes(e.type));
     }
