@@ -236,4 +236,4 @@ npm run lint      # Type-check without emit
 
 ## License
 
-MIT — see [LICENSE](./LICENSE)
+Proprietary — All rights reserved. See [LICENSE](./LICENSE) for details.

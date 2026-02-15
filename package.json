@@ -47,7 +47,8 @@
     "planner",
     "vibecoding"
   ],
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
+  "private": true,
   "dependencies": {
     "uuid": "^9.0.0"
   },
