@@ -199,6 +199,80 @@ export function stepExternalApiError(
   });
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * SECRET MASKING — prevents API keys and tokens from leaking into error
+ * messages, logs, or typed error payloads sent to consumers.
+ *
+ * ## WHY THIS EXISTS
+ *
+ * The architectural audit identified that LLM adapter error messages could
+ * include raw API keys when reporting connection failures (e.g., the key
+ * appearing in a URL or error string). Since TypedError payloads are
+ * serialized to JSON and returned in API responses, webhook payloads, and
+ * event streams, unmasked secrets would propagate to any system consuming
+ * bilko-flow's error output.
+ *
+ * ## HOW IT WORKS
+ *
+ * `maskSecret()` replaces all but the last 4 characters of a secret with
+ * asterisks. Secrets shorter than 8 characters are fully masked.
+ *
+ * `maskSecretsInMessage()` scans a message string for any of the provided
+ * secret values and replaces them with masked versions. This is called
+ * before constructing TypedError instances in LLM adapters and anywhere
+ * else that error messages might contain secrets.
+ *
+ * ## USAGE
+ *
+ * ```ts
+ * import { maskSecret, maskSecretsInMessage } from '../domain/errors';
+ *
+ * // Direct masking:
+ * maskSecret('sk-abc123def456');  // → '**********f456'
+ *
+ * // Message scanning:
+ * const safeMsg = maskSecretsInMessage(
+ *   `Connection failed for key sk-abc123def456`,
+ *   ['sk-abc123def456'],
+ * );
+ * // → 'Connection failed for key **********f456'
+ * ```
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+/**
+ * Mask a secret value, preserving only the last 4 characters for
+ * identification. Secrets shorter than 8 characters are fully masked.
+ *
+ * @param secret - The raw secret value to mask.
+ * @returns A masked string safe for inclusion in error messages and logs.
+ */
+export function maskSecret(secret: string): string {
+  if (!secret || secret.length < 8) return '****';
+  return '*'.repeat(secret.length - 4) + secret.slice(-4);
+}
+
+/**
+ * Scan an error message for any of the provided secret values and replace
+ * each occurrence with its masked equivalent. Returns the message unchanged
+ * if no secrets are found (or the secrets array is empty).
+ *
+ * @param message - The raw error message that may contain secrets.
+ * @param secrets - Array of secret values to scan for and mask.
+ * @returns A sanitized message safe for inclusion in typed errors.
+ */
+export function maskSecretsInMessage(message: string, secrets: string[]): string {
+  let result = message;
+  for (const secret of secrets) {
+    if (secret && secret.length > 0) {
+      // Use split/join instead of regex to avoid special character issues
+      result = result.split(secret).join(maskSecret(secret));
+    }
+  }
+  return result;
+}
+
 /** API error response wrapper. */
 export interface ApiErrorResponse {
   error: TypedError;

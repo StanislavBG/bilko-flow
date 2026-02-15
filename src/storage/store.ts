@@ -58,6 +58,8 @@ export interface WorkflowStore {
   getByIdAndVersion(id: string, version: number, scope: TenantScope): Promise<Workflow | null>;
   update(id: string, workflow: Workflow): Promise<Workflow | null>;
   listByScope(scope: TenantScope, options?: ListOptions): Promise<Workflow[]>;
+  /** Delete a workflow and all its versioned copies. */
+  delete(id: string): Promise<boolean>;
 }
 
 /** Store interface for runs. */
@@ -67,6 +69,8 @@ export interface RunStore {
   update(id: string, run: Partial<Run>): Promise<Run | null>;
   listByWorkflow(workflowId: string, scope: TenantScope, options?: ListOptions): Promise<Run[]>;
   listByScope(scope: TenantScope, options?: ListOptions): Promise<Run[]>;
+  /** Delete a run by ID. */
+  delete(id: string): Promise<boolean>;
 }
 
 /** Store interface for artifacts. */

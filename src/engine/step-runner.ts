@@ -234,14 +234,41 @@ export class NonRetryableStepError extends Error {
   }
 }
 
-/** Compute backoff delay based on strategy. */
+/**
+ * Compute backoff delay based on strategy, with jitter and a cap.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * WHY JITTER AND CAP WERE ADDED (v0.3.0 — RESILIENCY ENHANCEMENT)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The architectural audit identified two issues with the original backoff:
+ *
+ * 1. **No jitter** — When multiple concurrent runs retry against the same
+ *    external API, pure exponential backoff causes "thundering herd":
+ *    all retries fire at exactly the same time (1s, 2s, 4s, ...).
+ *    Adding ±25% random jitter decorrelates retry timing.
+ *
+ * 2. **No cap** — With maxAttempts=10 and baseMs=1000, exponential backoff
+ *    reaches 512 seconds (8.5 minutes) on the last retry. A 30-second cap
+ *    prevents excessively long waits while still providing meaningful backoff.
+ *
+ * The jitter uses a uniform distribution of ±25% of the computed delay.
+ * The cap of 30 seconds is applied before jitter to ensure the maximum
+ * possible delay is 30s * 1.25 = 37.5 seconds.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+const MAX_BACKOFF_MS = 30_000;
+
 function computeBackoff(
   strategy: 'fixed' | 'exponential',
   baseMs: number,
   attempt: number,
 ): number {
-  if (strategy === 'fixed') return baseMs;
-  return baseMs * Math.pow(2, attempt - 1);
+  const base = strategy === 'fixed' ? baseMs : baseMs * Math.pow(2, attempt - 1);
+  const capped = Math.min(base, MAX_BACKOFF_MS);
+  // Add ±25% jitter to decorrelate concurrent retries
+  const jitter = capped * 0.25 * (2 * Math.random() - 1);
+  return Math.max(0, Math.round(capped + jitter));
 }
 
 function sleep(ms: number): Promise<void> {

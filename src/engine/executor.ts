@@ -208,7 +208,24 @@ export class WorkflowExecutor {
         ],
       });
 
-      // Execute the step
+      /**
+       * Execute the step.
+       *
+       * ═══════════════════════════════════════════════════════════════════
+       * CANCELLATION SIGNAL FIX (v0.3.0 — RESILIENCY ENHANCEMENT)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * The `canceled` field was previously set to a snapshot boolean
+       * at context creation time. This meant that if cancelRun() was
+       * called AFTER the context was created but BEFORE the step
+       * finished, the step handler would not see the cancellation.
+       *
+       * Now we use a getter that checks the canceledRuns Set at read
+       * time, so step handlers always see the latest cancellation state.
+       * ═══════════════════════════════════════════════════════════════════
+       */
+      const canceledRuns = this.canceledRuns;
+      const capturedRunId = runId;
       const context: StepExecutionContext = {
         runId: run.id,
         accountId: run.accountId,
@@ -216,7 +233,7 @@ export class WorkflowExecutor {
         environmentId: run.environmentId,
         secrets: secretValues ?? {},
         upstreamOutputs: stepOutputs,
-        canceled: this.canceledRuns.has(runId),
+        get canceled() { return canceledRuns.has(capturedRunId); },
       };
 
       const result = await executeStep(compiledStep, context);

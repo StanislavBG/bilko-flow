@@ -74,6 +74,28 @@ export function createApp(context?: AppContext): express.Application {
   // Body parsing
   app.use(express.json({ limit: '10mb' }));
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   * SECURITY HEADERS (v0.3.0 — RESILIENCY ENHANCEMENT)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * The architectural audit identified missing security headers. While this
+   * server is a reference implementation (not a production gateway), consumers
+   * embedding it as a microservice should have basic security defaults.
+   *
+   * These headers are a lightweight alternative to a full helmet middleware
+   * dependency, covering the OWASP-recommended response headers.
+   * ═══════════════════════════════════════════════════════════════════════════
+   */
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '0');
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
+
   // Global rate limiter — 60 requests/minute per IP
   app.use('/api', rateLimit({ maxRequests: 60, windowMs: 60_000 }));
 
@@ -85,7 +107,7 @@ export function createApp(context?: AppContext): express.Application {
   app.get('/health', (_req, res) => {
     res.json({
       status: 'ok',
-      version: '0.2.0',
+      version: '0.3.0',
       specVersion: '1.0.0',
       uptimeMs: Date.now() - startTime,
       storage: 'memory',

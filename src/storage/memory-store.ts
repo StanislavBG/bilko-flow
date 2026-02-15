@@ -38,6 +38,39 @@ function applyListOptions<T>(items: T[], options?: ListOptions): T[] {
   return items.slice(offset, offset + limit);
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * DEEP COPY UTILITY (v0.3.0 — RESILIENCY ENHANCEMENT)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The architectural audit identified that using shallow spread ({ ...obj })
+ * for objects with nested properties (Workflow.steps[], Run.stepResults{},
+ * etc.) creates aliased references: the caller receives an object whose
+ * nested arrays/objects point to the SAME memory as the store's internal
+ * copy. Mutating either side corrupts the other.
+ *
+ * Example vulnerability (before fix):
+ * ```ts
+ * const run = await store.runs.getById(id, scope);
+ * run.stepResults['step_1'].status = 'succeeded'; // ← MUTATES STORE DATA
+ * ```
+ *
+ * `deepCopy()` uses `structuredClone` (Node 17+) with a JSON round-trip
+ * fallback for older runtimes. This ensures complete isolation between
+ * the store's internal state and returned values.
+ *
+ * Performance note: JSON round-trip adds ~2µs per object on modern
+ * hardware. For an in-memory store used in development/testing, this
+ * overhead is negligible compared to the data integrity guarantee.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+function deepCopy<T>(obj: T): T {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(obj);
+  }
+  return JSON.parse(JSON.stringify(obj));
+}
+
 class MemoryAccountStore implements AccountStore {
   private data = new Map<string, Account>();
 
@@ -108,10 +141,10 @@ class MemoryWorkflowStore implements WorkflowStore {
   private versions = new Map<string, Workflow>();
 
   async create(workflow: Workflow): Promise<Workflow> {
-    const copy = { ...workflow };
+    const copy = deepCopy(workflow);
     this.data.set(workflow.id, copy);
-    this.versions.set(`${workflow.id}:${workflow.version}`, { ...copy });
-    return { ...copy };
+    this.versions.set(`${workflow.id}:${workflow.version}`, deepCopy(copy));
+    return deepCopy(copy);
   }
 
   async getById(id: string, scope: TenantScope): Promise<Workflow | null> {
@@ -120,7 +153,7 @@ class MemoryWorkflowStore implements WorkflowStore {
     if (wf.accountId !== scope.accountId || wf.projectId !== scope.projectId || wf.environmentId !== scope.environmentId) {
       return null;
     }
-    return { ...wf };
+    return deepCopy(wf);
   }
 
   async getByIdAndVersion(id: string, version: number, scope: TenantScope): Promise<Workflow | null> {
@@ -129,15 +162,15 @@ class MemoryWorkflowStore implements WorkflowStore {
     if (wf.accountId !== scope.accountId || wf.projectId !== scope.projectId || wf.environmentId !== scope.environmentId) {
       return null;
     }
-    return { ...wf };
+    return deepCopy(wf);
   }
 
   async update(id: string, workflow: Workflow): Promise<Workflow | null> {
     if (!this.data.has(id)) return null;
-    const copy = { ...workflow };
+    const copy = deepCopy(workflow);
     this.data.set(id, copy);
-    this.versions.set(`${id}:${workflow.version}`, { ...copy });
-    return { ...copy };
+    this.versions.set(`${id}:${workflow.version}`, deepCopy(copy));
+    return deepCopy(copy);
   }
 
   async listByScope(scope: TenantScope, options?: ListOptions): Promise<Workflow[]> {
@@ -147,7 +180,19 @@ class MemoryWorkflowStore implements WorkflowStore {
         wf.projectId === scope.projectId &&
         wf.environmentId === scope.environmentId,
     );
-    return applyListOptions(items, options);
+    return applyListOptions(items.map(deepCopy), options);
+  }
+
+  async delete(id: string): Promise<boolean> {
+    const wf = this.data.get(id);
+    if (!wf) return false;
+    // Remove all versioned copies
+    for (const key of this.versions.keys()) {
+      if (key.startsWith(`${id}:`)) {
+        this.versions.delete(key);
+      }
+    }
+    return this.data.delete(id);
   }
 }
 
@@ -155,8 +200,8 @@ class MemoryRunStore implements RunStore {
   private data = new Map<string, Run>();
 
   async create(run: Run): Promise<Run> {
-    this.data.set(run.id, { ...run });
-    return { ...run };
+    this.data.set(run.id, deepCopy(run));
+    return deepCopy(run);
   }
 
   async getById(id: string, scope: TenantScope): Promise<Run | null> {
@@ -165,15 +210,15 @@ class MemoryRunStore implements RunStore {
     if (run.accountId !== scope.accountId || run.projectId !== scope.projectId || run.environmentId !== scope.environmentId) {
       return null;
     }
-    return { ...run };
+    return deepCopy(run);
   }
 
   async update(id: string, updates: Partial<Run>): Promise<Run | null> {
     const existing = this.data.get(id);
     if (!existing) return null;
-    const updated = { ...existing, ...updates, updatedAt: new Date().toISOString() };
+    const updated = { ...deepCopy(existing), ...deepCopy(updates), updatedAt: new Date().toISOString() };
     this.data.set(id, updated);
-    return { ...updated };
+    return deepCopy(updated);
   }
 
   async listByWorkflow(workflowId: string, scope: TenantScope, options?: ListOptions): Promise<Run[]> {
@@ -184,7 +229,7 @@ class MemoryRunStore implements RunStore {
         r.projectId === scope.projectId &&
         r.environmentId === scope.environmentId,
     );
-    return applyListOptions(items, options);
+    return applyListOptions(items.map(deepCopy), options);
   }
 
   async listByScope(scope: TenantScope, options?: ListOptions): Promise<Run[]> {
@@ -194,7 +239,11 @@ class MemoryRunStore implements RunStore {
         r.projectId === scope.projectId &&
         r.environmentId === scope.environmentId,
     );
-    return applyListOptions(items, options);
+    return applyListOptions(items.map(deepCopy), options);
+  }
+
+  async delete(id: string): Promise<boolean> {
+    return this.data.delete(id);
   }
 }
 
@@ -227,49 +276,71 @@ class MemoryArtifactStore implements ArtifactStore {
   }
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * PROVENANCE STORE — INDEXED BY runId (v0.3.0 — RESILIENCY ENHANCEMENT)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The architectural audit identified that `getByRunId()` used an O(n) linear
+ * scan over all provenance records. Since every run produces a provenance
+ * record, this scales linearly with total run count — unacceptable for
+ * long-running servers.
+ *
+ * Added a `runIdIndex` Map for O(1) lookup by runId.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 class MemoryProvenanceStore implements ProvenanceStore {
   private data = new Map<string, Provenance>();
+  private runIdIndex = new Map<string, string>();
 
   async create(provenance: Provenance): Promise<Provenance> {
-    this.data.set(provenance.id, { ...provenance });
-    return { ...provenance };
+    this.data.set(provenance.id, deepCopy(provenance));
+    this.runIdIndex.set(provenance.runId, provenance.id);
+    return deepCopy(provenance);
   }
 
   async getByRunId(runId: string, scope: TenantScope): Promise<Provenance | null> {
-    for (const prov of this.data.values()) {
-      if (
-        prov.runId === runId &&
-        prov.accountId === scope.accountId &&
-        prov.projectId === scope.projectId &&
-        prov.environmentId === scope.environmentId
-      ) {
-        return { ...prov };
-      }
+    const id = this.runIdIndex.get(runId);
+    if (!id) return null;
+    const prov = this.data.get(id);
+    if (!prov) return null;
+    if (
+      prov.accountId !== scope.accountId ||
+      prov.projectId !== scope.projectId ||
+      prov.environmentId !== scope.environmentId
+    ) {
+      return null;
     }
-    return null;
+    return deepCopy(prov);
   }
 }
 
+/**
+ * Same O(1) runId index optimization as MemoryProvenanceStore above.
+ */
 class MemoryAttestationStore implements AttestationStore {
   private data = new Map<string, Attestation>();
+  private runIdIndex = new Map<string, string>();
 
   async create(attestation: Attestation): Promise<Attestation> {
-    this.data.set(attestation.id, { ...attestation });
-    return { ...attestation };
+    this.data.set(attestation.id, deepCopy(attestation));
+    this.runIdIndex.set(attestation.runId, attestation.id);
+    return deepCopy(attestation);
   }
 
   async getByRunId(runId: string, scope: TenantScope): Promise<Attestation | null> {
-    for (const att of this.data.values()) {
-      if (
-        att.runId === runId &&
-        att.accountId === scope.accountId &&
-        att.projectId === scope.projectId &&
-        att.environmentId === scope.environmentId
-      ) {
-        return { ...att };
-      }
+    const id = this.runIdIndex.get(runId);
+    if (!id) return null;
+    const att = this.data.get(id);
+    if (!att) return null;
+    if (
+      att.accountId !== scope.accountId ||
+      att.projectId !== scope.projectId ||
+      att.environmentId !== scope.environmentId
+    ) {
+      return null;
     }
-    return null;
+    return deepCopy(att);
   }
 }
 

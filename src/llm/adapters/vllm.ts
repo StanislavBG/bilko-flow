@@ -111,7 +111,16 @@ export function createVllmAdapter() {
       );
     }
 
-    const data: OpenAIChatResponse = await res.json();
+    let data: OpenAIChatResponse;
+    try {
+      data = await res.json();
+    } catch {
+      const text = await res.text().catch(() => '(empty body)');
+      throw new LLMProviderError(
+        `vLLM returned non-JSON response (HTTP ${res.status}): ${text.slice(0, 200)}`,
+        res.status,
+      );
+    }
     const choice = data.choices?.[0];
 
     return {

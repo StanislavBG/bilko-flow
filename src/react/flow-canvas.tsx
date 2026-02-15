@@ -218,6 +218,8 @@ export function FlowCanvas({
       }
     };
 
+    // SSR safety: window may be undefined during server-side rendering
+    if (typeof window === 'undefined') return;
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [searchOpen, fitView, zoomIn, zoomOut, onDeselectStep, navigateStep]);
