@@ -57,8 +57,13 @@ export function createEventRoutes(store: Store, publisher: DataPlanePublisher): 
         return;
       }
 
+      const VALID_EVENT_TYPES: ReadonlySet<string> = new Set<DataPlaneEventType>([
+        'run.created', 'run.queued', 'run.started', 'run.succeeded', 'run.failed', 'run.canceled',
+        'step.pending', 'step.started', 'step.succeeded', 'step.failed', 'step.canceled',
+        'artifact.created', 'attestation.issued', 'provenance.recorded',
+      ]);
       const eventTypes = req.query.types
-        ? (req.query.types as string).split(',') as DataPlaneEventType[]
+        ? (req.query.types as string).split(',').filter((t) => VALID_EVENT_TYPES.has(t)) as DataPlaneEventType[]
         : undefined;
 
       const rawLimit = req.query.limit ? parseInt(req.query.limit as string, 10) : 100;

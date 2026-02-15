@@ -87,7 +87,7 @@ export function validateWebhookUrl(url: string): string | null {
 
   const hostname = parsed.hostname.toLowerCase();
 
-  // Block localhost
+  // Block localhost (all common forms)
   if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]') {
     return `Webhook URL must not point to localhost: ${hostname}`;
   }
@@ -97,7 +97,28 @@ export function validateWebhookUrl(url: string): string | null {
     return `Webhook URL must not point to cloud metadata endpoints: ${hostname}`;
   }
 
-  // Block private/reserved IP ranges (basic check for common patterns)
+  // Block IPv6 private/reserved ranges (loopback, link-local, IPv4-mapped)
+  if (hostname.includes(':')) {
+    const normalized = hostname.replace(/^\[|\]$/g, '');
+    // ::1 (loopback)
+    if (normalized === '::1' || normalized === '0:0:0:0:0:0:0:1') {
+      return `Webhook URL must not point to IPv6 loopback: ${hostname}`;
+    }
+    // fe80::/10 (link-local)
+    if (/^fe[89ab]/i.test(normalized)) {
+      return `Webhook URL must not point to IPv6 link-local range: ${hostname}`;
+    }
+    // ::ffff:127.0.0.1 (IPv4-mapped loopback)
+    if (/^::ffff:(?:127\.|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|169\.254\.|0\.)/i.test(normalized)) {
+      return `Webhook URL must not point to IPv4-mapped private address: ${hostname}`;
+    }
+    // fc00::/7 (unique local)
+    if (/^f[cd]/i.test(normalized)) {
+      return `Webhook URL must not point to IPv6 unique local range: ${hostname}`;
+    }
+  }
+
+  // Block private/reserved IPv4 ranges
   const ipv4Match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (ipv4Match) {
     const [, a, b] = ipv4Match.map(Number);
@@ -132,6 +153,7 @@ export function validateWebhookUrl(url: string): string | null {
  */
 const WEBHOOK_MAX_RETRIES = 3;
 const WEBHOOK_BACKOFF_BASE_MS = 1000;
+const WEBHOOK_MAX_PAYLOAD_BYTES = 1024 * 1024; // 1 MB
 
 function webhookSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -144,6 +166,9 @@ const httpDelivery: WebhookDeliveryFn = async (
   signingSecret?: string,
 ) => {
   const body = JSON.stringify(payload);
+  if (body.length > WEBHOOK_MAX_PAYLOAD_BYTES) {
+    throw new Error(`Webhook payload too large: ${body.length} bytes (max ${WEBHOOK_MAX_PAYLOAD_BYTES})`);
+  }
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'User-Agent': 'bilko-flow-webhook/0.3.0',

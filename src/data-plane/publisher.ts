@@ -114,10 +114,9 @@ export class DataPlanePublisher {
   }
 
   private matchesSubscription(event: DataPlaneEvent, sub: EventSubscription): boolean {
-    // In library mode (no tenant fields), deliver to all subscribers
-    if (!event.accountId && !event.projectId) return true;
-    if (event.accountId !== sub.accountId) return false;
-    if (event.projectId !== sub.projectId) return false;
+    // Tenant scoping: if subscriber specifies account/project, event must match
+    if (sub.accountId && event.accountId !== sub.accountId) return false;
+    if (sub.projectId && event.projectId !== sub.projectId) return false;
     if (sub.environmentId && event.environmentId !== sub.environmentId) return false;
     if (sub.eventTypes?.length && !sub.eventTypes.includes(event.type)) return false;
     return true;

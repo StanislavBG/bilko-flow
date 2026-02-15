@@ -85,29 +85,40 @@ export function createRunRoutes(
    * Get run status, step statuses, determinism grade, provenance summary.
    */
   router.get('/runs/:runId', async (req: AuthenticatedRequest, res) => {
-    const run = await store.runs.getById(req.params.runId, req.scope);
-    if (!run) {
-      res.status(404).json(apiError(notFoundError('Run', req.params.runId)));
-      return;
-    }
+    try {
+      const run = await store.runs.getById(req.params.runId, req.scope);
+      if (!run) {
+        res.status(404).json(apiError(notFoundError('Run', req.params.runId)));
+        return;
+      }
 
-    // Fetch provenance summary if available
-    let provenance = null;
-    if (run.provenanceId) {
-      provenance = await store.provenance.getByRunId(run.id, req.scope);
-    }
+      // Fetch provenance summary if available
+      let provenance = null;
+      if (run.provenanceId) {
+        provenance = await store.provenance.getByRunId(run.id, req.scope);
+      }
 
-    res.json({
-      run,
-      provenance: provenance
-        ? {
-            id: provenance.id,
-            determinismGrade: provenance.determinismGrade,
-            workflowHash: provenance.workflowHash,
-            compiledPlanHash: provenance.compiledPlanHash,
-          }
-        : null,
-    });
+      res.json({
+        run,
+        provenance: provenance
+          ? {
+              id: provenance.id,
+              determinismGrade: provenance.determinismGrade,
+              workflowHash: provenance.workflowHash,
+              compiledPlanHash: provenance.compiledPlanHash,
+            }
+          : null,
+      });
+    } catch (err) {
+      res.status(500).json(
+        apiError({
+          code: 'SYSTEM.INTERNAL',
+          message: err instanceof Error ? err.message : 'Failed to fetch run',
+          retryable: false,
+          suggestedFixes: [],
+        }),
+      );
+    }
   });
 
   /**

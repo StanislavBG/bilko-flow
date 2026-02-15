@@ -36,6 +36,8 @@ const DEFAULT_CONFIG: ExecutorConfig = {
 export class WorkflowExecutor {
   private config: ExecutorConfig;
   private canceledRuns = new Set<string>();
+  /** Guard against concurrent executeRun calls on the same run. */
+  private runningRuns = new Set<string>();
 
   constructor(
     private store: Store,
@@ -134,6 +136,24 @@ export class WorkflowExecutor {
    * (or skipped entirely in library mode).
    */
   async executeRun(runId: string, scope?: TenantScope, secretValues?: Record<string, string>): Promise<Run> {
+    // Prevent concurrent execution of the same run
+    if (this.runningRuns.has(runId)) {
+      throw new ExecutorError(createTypedError({
+        code: 'WORKFLOW.ALREADY_RUNNING',
+        message: `Run "${runId}" is already being executed`,
+        retryable: false,
+      }));
+    }
+    this.runningRuns.add(runId);
+
+    try {
+      return await this.executeRunInternal(runId, scope, secretValues);
+    } finally {
+      this.runningRuns.delete(runId);
+    }
+  }
+
+  private async executeRunInternal(runId: string, scope?: TenantScope, secretValues?: Record<string, string>): Promise<Run> {
     let run = await this.store.runs.getById(runId, scope);
     if (!run) {
       throw new ExecutorError(notFoundError('Run', runId));
@@ -299,6 +319,7 @@ export class WorkflowExecutor {
     run.determinismGrade = compilation.plan.determinismAnalysis.achievableGrade;
     await this.store.runs.update(run.id, run);
     await this.safePublishRunEvent(run, 'run.succeeded');
+    this.canceledRuns.delete(run.id);
 
     // Generate provenance
     await this.generateProvenance(run, workflow, compilation.plan, transcript);

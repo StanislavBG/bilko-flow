@@ -28,14 +28,16 @@ export interface AuthenticatedRequest extends Request {
 export function defaultIdentityMiddleware(store: Store) {
   return async (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
     const identityId = (req.headers['x-identity-id'] as string) || 'anonymous';
-    const identityType = (req.headers['x-identity-type'] as string) || 'user';
+    const rawIdentityType = (req.headers['x-identity-type'] as string) || 'user';
+    const identityType: 'user' | 'service-principal' =
+      rawIdentityType === 'service-principal' ? 'service-principal' : 'user';
     const body = (req.body && typeof req.body === 'object') ? req.body as Record<string, unknown> : {};
     const accountId = req.headers['x-account-id'] as string || req.params.accountId || (typeof body.accountId === 'string' ? body.accountId : undefined);
 
     if (identityId) {
       req.identity = {
         identityId,
-        identityType: identityType as 'user' | 'service-principal',
+        identityType,
         ...(accountId ? { accountId } : {}),
       };
     }

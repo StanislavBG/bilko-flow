@@ -200,22 +200,36 @@ export async function executeStep(
   };
 }
 
-/** Execute a function with a timeout. */
+/** Execute a function with a timeout. Uses try-finally to guarantee timer cleanup. */
 async function executeWithTimeout<T>(
   fn: () => Promise<T>,
   timeoutMs: number,
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new TimeoutError(timeoutMs)), timeoutMs);
-    fn()
-      .then((result) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        reject(new TimeoutError(timeoutMs));
+      }
+    }, timeoutMs);
+
+    fn().then(
+      (result) => {
         clearTimeout(timer);
-        resolve(result);
-      })
-      .catch((err) => {
+        if (!settled) {
+          settled = true;
+          resolve(result);
+        }
+      },
+      (err) => {
         clearTimeout(timer);
-        reject(err);
-      });
+        if (!settled) {
+          settled = true;
+          reject(err);
+        }
+      },
+    );
   });
 }
 
