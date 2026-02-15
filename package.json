@@ -1,7 +1,19 @@
 {
   "name": "bilko-flow",
   "version": "0.3.0",
-  "description": "Typed DSL, determinism model, and planner protocol for deterministic workflow creation — designed for AI agent consumption",
+  "description": "TypeScript library for VibeCoders and AI agents to design, validate, and execute deterministic workflows from natural-language goals",
+  "author": "bilko-flow contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/StanislavBG/bilko-flow.git"
+  },
+  "homepage": "https://github.com/StanislavBG/bilko-flow#readme",
+  "bugs": {
+    "url": "https://github.com/StanislavBG/bilko-flow/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -22,8 +34,6 @@
   "scripts": {
     "build": "tsc && cp src/styles.css dist/styles.css",
     "build:css": "cp src/styles.css dist/styles.css",
-    "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts",
     "test": "jest --forceExit",
     "test:watch": "jest --watch",
     "lint": "tsc --noEmit"
@@ -32,11 +42,14 @@
     "workflow",
     "deterministic",
     "orchestration",
-    "dsl"
+    "dsl",
+    "ai-agent",
+    "planner",
+    "vibecoding"
   ],
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
+  "private": true,
   "dependencies": {
-    "express": "^4.18.2",
     "uuid": "^9.0.0"
   },
   "peerDependencies": {
@@ -54,7 +67,7 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
-    "@types/express": "^4.17.21",
+
     "@types/jest": "^29.5.11",
     "@types/node": "^20.10.0",
     "@types/react": "^19.2.14",

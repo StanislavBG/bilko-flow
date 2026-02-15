@@ -19,7 +19,7 @@
  */
 
 import { DeterminismGrade } from '../domain/determinism';
-import { Step, SecretRequirement } from '../domain/workflow';
+import { Workflow, Step, SecretRequirement } from '../domain/workflow';
 import {
   Planner,
   PlannerVersionInfo,
@@ -111,7 +111,7 @@ export class DefaultPlanner implements Planner {
    * A real implementation would analyze the goal delta and produce
    * targeted step additions, removals, or updates.
    */
-  async proposePatch(workflow: any, goal: PlanGoal): Promise<WorkflowPatch> {
+  async proposePatch(workflow: Workflow, goal: PlanGoal): Promise<WorkflowPatch> {
     return {
       workflowId: workflow.id,
       baseVersion: workflow.version,
