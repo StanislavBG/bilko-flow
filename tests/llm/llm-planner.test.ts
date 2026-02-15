@@ -119,8 +119,16 @@ describe('LLMPlanner', () => {
 
       const mockWorkflow = {
         id: 'wf_123',
+        name: 'Test Workflow',
         version: 1,
+        specVersion: '1.0.0',
+        status: WorkflowStatus.Active,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        determinism: { targetGrade: DeterminismGrade.BestEffort },
+        entryStepId: 'step_1',
         steps: [],
+        secrets: [],
       };
 
       const goal: PlanGoal = {

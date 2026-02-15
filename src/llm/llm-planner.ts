@@ -19,6 +19,7 @@ import {
   RepairContext,
 } from '../planner/interface';
 import { DeterminismGrade } from '../domain/determinism';
+import { Workflow } from '../domain/workflow';
 import { chatJSON, ChatOptions, LLMProvider, LLMProviderError } from './index';
 
 /** Configuration for the LLM planner. */
@@ -89,7 +90,7 @@ export class LLMPlanner implements Planner {
     return result;
   }
 
-  async proposePatch(workflow: any, goal: PlanGoal): Promise<WorkflowPatch> {
+  async proposePatch(workflow: Workflow, goal: PlanGoal): Promise<WorkflowPatch> {
     const prompt = buildPatchPrompt(workflow, goal);
 
     const result = await this.callLLM<WorkflowPatch>(prompt);
@@ -192,7 +193,7 @@ Respond with a JSON object matching this schema:
 }`;
 }
 
-function buildPatchPrompt(workflow: any, goal: PlanGoal): string {
+function buildPatchPrompt(workflow: Workflow, goal: PlanGoal): string {
   return `Modify the following workflow to achieve a new goal.
 
 Current workflow (ID: ${workflow.id}, version: ${workflow.version}):

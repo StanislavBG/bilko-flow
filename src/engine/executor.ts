@@ -9,7 +9,7 @@
 import { v4 as uuid } from 'uuid';
 import { createHash, createHmac } from 'crypto';
 import { TenantScope } from '../domain/account';
-import { DeterminismGrade } from '../domain/determinism';
+import { DeterminismGrade, DeterminismAnalysis } from '../domain/determinism';
 import { Run, RunStatus, StepRunStatus, StepRunResult, CreateRunInput } from '../domain/run';
 import { Workflow } from '../domain/workflow';
 import { Provenance, HashRecord, TranscriptEntry } from '../domain/provenance';
@@ -358,7 +358,7 @@ export class WorkflowExecutor {
   async testWorkflow(
     workflow: Workflow,
     scope?: TenantScope,
-  ): Promise<{ valid: boolean; compilation: { success: boolean; errors: TypedError[] }; determinism?: any }> {
+  ): Promise<{ valid: boolean; compilation: { success: boolean; errors: TypedError[] }; determinism?: DeterminismAnalysis }> {
     const compilation = compileWorkflow(workflow);
     return {
       valid: compilation.validation.valid,
