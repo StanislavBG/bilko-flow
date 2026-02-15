@@ -75,6 +75,14 @@ export function getStepHandler(type: string): StepHandler | undefined {
   return stepHandlers.get(type);
 }
 
+/**
+ * Clear all registered step handlers. Intended for test isolation —
+ * call in afterEach() to prevent handler leakage between test suites.
+ */
+export function clearStepHandlers(): void {
+  stepHandlers.clear();
+}
+
 /** Get all registered step handlers. */
 export function getRegisteredHandlers(): Map<string, StepHandler> {
   return stepHandlers;

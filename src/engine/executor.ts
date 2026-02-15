@@ -20,7 +20,7 @@ import { Store } from '../storage/store';
 import { transitionRunStatus, transitionStepStatus, isTerminalStepStatus } from './state-machine';
 import { executeStep, StepExecutionContext } from './step-runner';
 import { DataPlanePublisher } from '../data-plane/publisher';
-import { DataPlaneEvent } from '../domain/events';
+import { DataPlaneEvent, DataPlaneEventType } from '../domain/events';
 
 /** Executor configuration. */
 export interface ExecutorConfig {
@@ -346,17 +346,17 @@ export class WorkflowExecutor {
    * calls with try-catch to ensure publishing failures are swallowed.
    * ═══════════════════════════════════════════════════════════════════════
    */
-  private async safePublishRunEvent(run: Run, eventType: string): Promise<void> {
+  private async safePublishRunEvent(run: Run, eventType: DataPlaneEventType): Promise<void> {
     try {
-      await this.publisher.publishRunEvent(run, eventType as any);
+      await this.publisher.publishRunEvent(run, eventType);
     } catch {
       // Publishing is observational — swallow errors to avoid crashing the run.
     }
   }
 
-  private async safePublishStepEvent(run: Run, stepId: string, eventType: string): Promise<void> {
+  private async safePublishStepEvent(run: Run, stepId: string, eventType: DataPlaneEventType): Promise<void> {
     try {
-      await this.publisher.publishStepEvent(run, stepId, eventType as any);
+      await this.publisher.publishStepEvent(run, stepId, eventType);
     } catch {
       // Publishing is observational — swallow errors to avoid crashing the run.
     }
@@ -381,6 +381,11 @@ export class WorkflowExecutor {
     return run;
   }
 
+  /**
+   * Transition a run to Failed state. Cleans up the canceledRuns Set
+   * to prevent memory leaks when a run queued for cancellation fails
+   * due to a step error before the cancellation propagates.
+   */
   private async failRun(run: Run, error: TypedError): Promise<Run> {
     run.status = RunStatus.Failed;
     run.error = error;
@@ -388,9 +393,14 @@ export class WorkflowExecutor {
     run.updatedAt = new Date().toISOString();
     await this.store.runs.update(run.id, run);
     await this.safePublishRunEvent(run, 'run.failed');
+    this.canceledRuns.delete(run.id);
     return run;
   }
 
+  /**
+   * Internal cancellation with try-finally to guarantee canceledRuns
+   * cleanup even if the store update throws.
+   */
   private async cancelRunInternal(run: Run): Promise<Run> {
     run.status = RunStatus.Canceled;
     run.canceledAt = new Date().toISOString();
@@ -408,9 +418,12 @@ export class WorkflowExecutor {
       }
     }
 
-    await this.store.runs.update(run.id, run);
-    await this.safePublishRunEvent(run, 'run.canceled');
-    this.canceledRuns.delete(run.id);
+    try {
+      await this.store.runs.update(run.id, run);
+      await this.safePublishRunEvent(run, 'run.canceled');
+    } finally {
+      this.canceledRuns.delete(run.id);
+    }
     return run;
   }
 

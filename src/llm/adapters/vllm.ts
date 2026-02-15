@@ -95,6 +95,7 @@ export function createVllmAdapter() {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(120_000),
       });
     } catch (err) {
       throw new LLMProviderError(

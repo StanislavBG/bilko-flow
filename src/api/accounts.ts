@@ -120,19 +120,28 @@ export function createAccountRoutes(store: Store, auditService: AuditService): R
    * Fetch account details.
    */
   router.get('/:accountId', async (req, res) => {
-    const account = await store.accounts.getById(req.params.accountId);
-    if (!account) {
-      res.status(404).json(
-        apiError({
-          code: 'VALIDATION.NOT_FOUND',
-          message: `Account not found: ${req.params.accountId}`,
-          retryable: false,
-          suggestedFixes: [],
-        }),
-      );
-      return;
+    try {
+      const account = await store.accounts.getById(req.params.accountId);
+      if (!account) {
+        res.status(404).json(
+          apiError({
+            code: 'VALIDATION.NOT_FOUND',
+            message: `Account not found: ${req.params.accountId}`,
+            retryable: false,
+            suggestedFixes: [],
+          }),
+        );
+        return;
+      }
+      res.json({ account });
+    } catch (err) {
+      res.status(500).json(apiError({
+        code: 'SYSTEM.INTERNAL',
+        message: err instanceof Error ? err.message : 'Failed to fetch account',
+        retryable: false,
+        suggestedFixes: [],
+      }));
     }
-    res.json({ account });
   });
 
   return router;

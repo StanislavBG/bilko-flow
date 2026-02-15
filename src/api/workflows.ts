@@ -133,18 +133,27 @@ export function createWorkflowRoutes(
    * Fetch workflow definition and version metadata.
    */
   router.get('/:workflowId', async (req: AuthenticatedRequest, res) => {
-    if (!req.scope) {
-      res.status(400).json(apiError(validationError('Tenant scope headers required (x-account-id, x-project-id, x-environment-id)')));
-      return;
-    }
+    try {
+      if (!req.scope) {
+        res.status(400).json(apiError(validationError('Tenant scope headers required (x-account-id, x-project-id, x-environment-id)')));
+        return;
+      }
 
-    const workflow = await store.workflows.getById(req.params.workflowId, req.scope);
-    if (!workflow) {
-      res.status(404).json(apiError(notFoundError('Workflow', req.params.workflowId)));
-      return;
-    }
+      const workflow = await store.workflows.getById(req.params.workflowId, req.scope);
+      if (!workflow) {
+        res.status(404).json(apiError(notFoundError('Workflow', req.params.workflowId)));
+        return;
+      }
 
-    res.json({ workflow });
+      res.json({ workflow });
+    } catch (err) {
+      res.status(500).json(apiError({
+        code: 'SYSTEM.INTERNAL',
+        message: err instanceof Error ? err.message : 'Failed to fetch workflow',
+        retryable: false,
+        suggestedFixes: [],
+      }));
+    }
   });
 
   /**
