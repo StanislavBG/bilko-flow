@@ -13,6 +13,8 @@ import {
   resolveStepBg,
   resolveStepTextColor,
   resolveConnectorColor,
+  resolveAutoMode,
+  DEFAULT_AUTO_BREAKPOINTS,
 } from '../../src/react/flow-progress-shared';
 import { DEFAULT_FLOW_PROGRESS_THEME } from '../../src/react/step-type-config';
 import type { FlowProgressStep } from '../../src/react/types';
@@ -222,6 +224,110 @@ describe('resolveConnectorColor with skipped status', () => {
   it('returns pendingColor for skipped steps (not treated as complete)', () => {
     const step: FlowProgressStep = { id: '1', label: 'Test', status: 'skipped' };
     expect(resolveConnectorColor(step, theme)).toBe(theme.pendingColor);
+  });
+});
+
+describe('resolveAutoMode', () => {
+  describe('4-tier width-based selection', () => {
+    it('returns vertical for width < 480 (default compact threshold)', () => {
+      expect(resolveAutoMode(0)).toBe('vertical');
+      expect(resolveAutoMode(200)).toBe('vertical');
+      expect(resolveAutoMode(479)).toBe('vertical');
+    });
+
+    it('returns compact for width between compact and expanded thresholds', () => {
+      expect(resolveAutoMode(480)).toBe('compact');
+      expect(resolveAutoMode(560)).toBe('compact');
+      expect(resolveAutoMode(639)).toBe('compact');
+    });
+
+    it('returns expanded for width between expanded and full thresholds', () => {
+      expect(resolveAutoMode(640)).toBe('expanded');
+      expect(resolveAutoMode(750)).toBe('expanded');
+      expect(resolveAutoMode(899)).toBe('expanded');
+    });
+
+    it('returns full for width >= full threshold', () => {
+      expect(resolveAutoMode(900)).toBe('full');
+      expect(resolveAutoMode(1200)).toBe('full');
+      expect(resolveAutoMode(1920)).toBe('full');
+    });
+  });
+
+  describe('parallel thread awareness', () => {
+    it('returns compact instead of vertical when parallel threads exist', () => {
+      expect(resolveAutoMode(300, { hasParallelThreads: true })).toBe('compact');
+      expect(resolveAutoMode(0, { hasParallelThreads: true })).toBe('compact');
+      expect(resolveAutoMode(479, { hasParallelThreads: true })).toBe('compact');
+    });
+
+    it('does not affect modes above compact threshold when threads exist', () => {
+      expect(resolveAutoMode(640, { hasParallelThreads: true })).toBe('expanded');
+      expect(resolveAutoMode(900, { hasParallelThreads: true })).toBe('full');
+    });
+  });
+
+  describe('pipeline auto-detection', () => {
+    it('returns pipeline when pipelineConfig is present and width >= expanded', () => {
+      expect(resolveAutoMode(640, { hasPipelineConfig: true })).toBe('pipeline');
+      expect(resolveAutoMode(900, { hasPipelineConfig: true })).toBe('pipeline');
+      expect(resolveAutoMode(1200, { hasPipelineConfig: true })).toBe('pipeline');
+    });
+
+    it('does not return pipeline when width is below expanded threshold', () => {
+      expect(resolveAutoMode(480, { hasPipelineConfig: true })).toBe('compact');
+      expect(resolveAutoMode(300, { hasPipelineConfig: true })).toBe('vertical');
+    });
+
+    it('does not return pipeline when parallel threads exist', () => {
+      expect(resolveAutoMode(900, {
+        hasPipelineConfig: true,
+        hasParallelThreads: true,
+      })).toBe('full');
+    });
+
+    it('does not return pipeline when both threads and pipeline config exist', () => {
+      expect(resolveAutoMode(640, {
+        hasPipelineConfig: true,
+        hasParallelThreads: true,
+      })).toBe('expanded');
+    });
+  });
+
+  describe('custom breakpoints', () => {
+    it('respects custom compact breakpoint', () => {
+      const bp = { compact: 320 };
+      expect(resolveAutoMode(300, { breakpoints: bp })).toBe('vertical');
+      expect(resolveAutoMode(320, { breakpoints: bp })).toBe('compact');
+    });
+
+    it('respects custom expanded breakpoint', () => {
+      const bp = { expanded: 500 };
+      expect(resolveAutoMode(499, { breakpoints: bp })).toBe('compact');
+      expect(resolveAutoMode(500, { breakpoints: bp })).toBe('expanded');
+    });
+
+    it('respects custom full breakpoint', () => {
+      const bp = { full: 1000 };
+      expect(resolveAutoMode(999, { breakpoints: bp })).toBe('expanded');
+      expect(resolveAutoMode(1000, { breakpoints: bp })).toBe('full');
+    });
+
+    it('supports all custom breakpoints together', () => {
+      const bp = { compact: 300, expanded: 500, full: 800 };
+      expect(resolveAutoMode(200, { breakpoints: bp })).toBe('vertical');
+      expect(resolveAutoMode(400, { breakpoints: bp })).toBe('compact');
+      expect(resolveAutoMode(600, { breakpoints: bp })).toBe('expanded');
+      expect(resolveAutoMode(900, { breakpoints: bp })).toBe('full');
+    });
+  });
+
+  describe('DEFAULT_AUTO_BREAKPOINTS', () => {
+    it('has expected default values', () => {
+      expect(DEFAULT_AUTO_BREAKPOINTS.compact).toBe(480);
+      expect(DEFAULT_AUTO_BREAKPOINTS.expanded).toBe(640);
+      expect(DEFAULT_AUTO_BREAKPOINTS.full).toBe(900);
+    });
   });
 });
 

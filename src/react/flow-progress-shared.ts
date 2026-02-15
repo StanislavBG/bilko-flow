@@ -50,8 +50,121 @@ import type { FlowProgressProps, FlowProgressStep, FlowProgressTheme } from './t
 /** Default sliding window radius */
 export const DEFAULT_RADIUS = 2;
 
-/** Default breakpoint (px) for auto mode: below → compact, at/above → expanded */
+/** Default breakpoint (px) for auto mode compact threshold (legacy, maps to breakpoints.compact) */
 export const DEFAULT_AUTO_BREAKPOINT = 480;
+
+/**
+ * Default breakpoints for the enhanced multi-tier auto-mode.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * MULTI-BREAKPOINT AUTO-MODE RESOLUTION
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The enhanced auto-mode uses a 4-tier breakpoint system inspired by
+ * research into how the top DAG visualization libraries handle layout
+ * selection (see docs/dag-visualization-research.md):
+ *
+ *   Container Width:  0 ──── 480px ──── 640px ──── 900px ──── ...
+ *                     │       │         │         │
+ *   Resolved Mode:  vertical compact  expanded   full
+ *
+ * This mirrors patterns from:
+ * - AntV G6: selects renderer (Canvas/SVG/WebGL) based on graph size
+ * - Cytoscape.js: selects layout algorithm based on graph characteristics
+ * - Graphviz: selects layout engine (dot/neato/fdp) based on graph type
+ *
+ * bilko-flow applies this concept at the RENDERING MODE level: selecting
+ * the optimal visual representation based on available space and flow
+ * complexity (step count, parallel threads, pipeline config).
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+export const DEFAULT_AUTO_BREAKPOINTS = {
+  /** Below this width → vertical mode (mobile/narrow containers) */
+  compact: 480,
+  /** Below this width → compact mode (sidebars, medium-narrow) */
+  expanded: 640,
+  /** At or above this width → full mode (wide areas) */
+  full: 900,
+} as const;
+
+/**
+ * Resolve the effective display mode for auto-mode based on container
+ * width and flow characteristics.
+ *
+ * This is a PURE FUNCTION with no side effects — it can be called from
+ * tests, from the component, or from consumer code that needs to predict
+ * which mode auto will select for given conditions.
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * RESOLUTION ALGORITHM
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ * 1. If `pipelineConfig` is provided AND no parallel threads AND width
+ *    is sufficient → pipeline mode (explicit pipeline intent)
+ *
+ * 2. Width-based 4-tier selection:
+ *    - < compact threshold  → vertical (or compact if parallel threads)
+ *    - < expanded threshold → compact
+ *    - < full threshold     → expanded
+ *    - ≥ full threshold     → full
+ *
+ * The parallel-thread check in tier 1 ensures that vertical mode (which
+ * does NOT render parallel threads) is never selected when threads exist.
+ * This prevents data loss where the user has parallel execution but the
+ * visualization silently drops it.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+export function resolveAutoMode(
+  containerWidth: number,
+  options?: {
+    hasParallelThreads?: boolean;
+    hasPipelineConfig?: boolean;
+    breakpoints?: {
+      compact?: number;
+      expanded?: number;
+      full?: number;
+    };
+  },
+): 'vertical' | 'compact' | 'expanded' | 'full' | 'pipeline' {
+  const bp = {
+    compact: options?.breakpoints?.compact ?? DEFAULT_AUTO_BREAKPOINTS.compact,
+    expanded: options?.breakpoints?.expanded ?? DEFAULT_AUTO_BREAKPOINTS.expanded,
+    full: options?.breakpoints?.full ?? DEFAULT_AUTO_BREAKPOINTS.full,
+  };
+
+  /*
+   * Pipeline auto-detection: when pipelineConfig is explicitly provided
+   * by the consumer, prefer pipeline mode at sufficient width. Pipeline
+   * mode does NOT support parallel threads, so skip this when threads
+   * exist — the consumer's parallel data takes priority over pipeline
+   * styling preferences.
+   */
+  if (
+    options?.hasPipelineConfig &&
+    !options?.hasParallelThreads &&
+    containerWidth >= bp.expanded
+  ) {
+    return 'pipeline';
+  }
+
+  // Tier 1: Narrow containers → vertical (mobile) or compact (if threads)
+  if (containerWidth < bp.compact) {
+    return options?.hasParallelThreads ? 'compact' : 'vertical';
+  }
+
+  // Tier 2: Medium-narrow → compact
+  if (containerWidth < bp.expanded) {
+    return 'compact';
+  }
+
+  // Tier 3: Medium-wide → expanded
+  if (containerWidth < bp.full) {
+    return 'expanded';
+  }
+
+  // Tier 4: Wide → full
+  return 'full';
+}
 
 /** Threshold: sliding window activates when steps > 2*radius+3 */
 export function needsWindow(count: number, radius: number): boolean {
