@@ -75,7 +75,7 @@ describe('LLMParseError', () => {
     const longResponse = 'x'.repeat(1000);
     const error = new LLMParseError('parse failed', longResponse, 1);
     const preview = error.typedError.details?.rawResponsePreview as string;
-    expect(preview.length).toBe(500);
+    expect(preview.length).toBe(200);
   });
 
   test('suggests checking API key', () => {

@@ -273,6 +273,50 @@ export function maskSecretsInMessage(message: string, secrets: string[]): string
   return result;
 }
 
+// --- RUN error factory functions (v0.3.0 — completes error taxonomy) ---
+
+export function runNotFoundError(runId: string): TypedError {
+  return createTypedError({
+    code: 'RUN.NOT_FOUND',
+    message: `Run not found: ${runId}`,
+    runId,
+    retryable: false,
+  });
+}
+
+export function runCanceledError(runId: string, reason?: string): TypedError {
+  return createTypedError({
+    code: 'RUN.CANCELED',
+    message: reason ? `Run canceled: ${reason}` : 'Run canceled',
+    runId,
+    retryable: false,
+    details: reason ? { reason } : undefined,
+  });
+}
+
+export function runTimeoutError(runId: string, timeoutMs: number): TypedError {
+  return createTypedError({
+    code: 'RUN.TIMEOUT',
+    message: `Run exceeded timeout of ${timeoutMs}ms`,
+    runId,
+    retryable: true,
+    details: { timeoutMs },
+    suggestedFixes: [
+      { type: 'INCREASE_TIMEOUT', params: { timeoutMs: timeoutMs * 2 } },
+    ],
+  });
+}
+
+export function runInvalidStateTransition(runId: string, from: string, to: string): TypedError {
+  return createTypedError({
+    code: 'RUN.INVALID_STATE_TRANSITION',
+    message: `Cannot transition run from "${from}" to "${to}"`,
+    runId,
+    retryable: false,
+    details: { from, to },
+  });
+}
+
 /** API error response wrapper. */
 export interface ApiErrorResponse {
   error: TypedError;

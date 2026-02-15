@@ -20,6 +20,7 @@ import { Store } from '../storage/store';
 import { transitionRunStatus, transitionStepStatus, isTerminalStepStatus } from './state-machine';
 import { executeStep, StepExecutionContext } from './step-runner';
 import { DataPlanePublisher } from '../data-plane/publisher';
+import { DataPlaneEvent } from '../domain/events';
 
 /** Executor configuration. */
 export interface ExecutorConfig {
@@ -115,7 +116,7 @@ export class WorkflowExecutor {
     }
 
     await this.store.runs.create(run);
-    await this.publisher.publishRunEvent(run, 'run.created');
+    await this.safePublishRunEvent(run, 'run.created');
 
     return run;
   }
@@ -129,7 +130,7 @@ export class WorkflowExecutor {
 
     // Transition to queued
     run = await this.transitionRun(run, RunStatus.Queued);
-    await this.publisher.publishRunEvent(run, 'run.queued');
+    await this.safePublishRunEvent(run, 'run.queued');
 
     // Fetch and compile workflow
     const workflow = await this.store.workflows.getByIdAndVersion(
@@ -155,7 +156,7 @@ export class WorkflowExecutor {
     run = await this.transitionRun(run, RunStatus.Running);
     run.startedAt = new Date().toISOString();
     await this.store.runs.update(run.id, run);
-    await this.publisher.publishRunEvent(run, 'run.started');
+    await this.safePublishRunEvent(run, 'run.started');
 
     // Execute steps in topological order
     const transcript: TranscriptEntry[] = [];
@@ -196,7 +197,7 @@ export class WorkflowExecutor {
         attempts: 0,
       };
       await this.store.runs.update(run.id, run);
-      await this.publisher.publishStepEvent(run, stepId, 'step.started');
+      await this.safePublishStepEvent(run, stepId, 'step.started');
 
       transcript.push({
         stepId,
@@ -251,7 +252,7 @@ export class WorkflowExecutor {
           durationMs: result.durationMs,
           outputHash: result.outputs ? computeHash(JSON.stringify(result.outputs)) : undefined,
         });
-        await this.publisher.publishStepEvent(run, stepId, 'step.succeeded');
+        await this.safePublishStepEvent(run, stepId, 'step.succeeded');
       } else if (result.status === StepRunStatus.Failed) {
         transcript.push({
           stepId,
@@ -259,7 +260,7 @@ export class WorkflowExecutor {
           action: 'failed',
           durationMs: result.durationMs,
         });
-        await this.publisher.publishStepEvent(run, stepId, 'step.failed');
+        await this.safePublishStepEvent(run, stepId, 'step.failed');
 
         // Fail the run
         run = await this.failRun(run, result.error ?? createTypedError({
@@ -285,7 +286,7 @@ export class WorkflowExecutor {
     run.completedAt = new Date().toISOString();
     run.determinismGrade = compilation.plan.determinismAnalysis.achievableGrade;
     await this.store.runs.update(run.id, run);
-    await this.publisher.publishRunEvent(run, 'run.succeeded');
+    await this.safePublishRunEvent(run, 'run.succeeded');
 
     // Generate provenance
     await this.generateProvenance(run, workflow, compilation.plan, transcript);
@@ -333,6 +334,42 @@ export class WorkflowExecutor {
     };
   }
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   * SAFE PUBLISHER CALLS (v0.3.0 — RESILIENCY ENHANCEMENT)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The audit identified that publisher errors (e.g., event store write
+   * failure, subscriber callback exception) would bubble up and crash
+   * the entire run. Event publishing is observational — it must not
+   * affect the outcome of the run itself. These helpers wrap publisher
+   * calls with try-catch to ensure publishing failures are swallowed.
+   * ═══════════════════════════════════════════════════════════════════════
+   */
+  private async safePublishRunEvent(run: Run, eventType: string): Promise<void> {
+    try {
+      await this.publisher.publishRunEvent(run, eventType as any);
+    } catch {
+      // Publishing is observational — swallow errors to avoid crashing the run.
+    }
+  }
+
+  private async safePublishStepEvent(run: Run, stepId: string, eventType: string): Promise<void> {
+    try {
+      await this.publisher.publishStepEvent(run, stepId, eventType as any);
+    } catch {
+      // Publishing is observational — swallow errors to avoid crashing the run.
+    }
+  }
+
+  private async safePublishEvent(event: DataPlaneEvent): Promise<void> {
+    try {
+      await this.publisher.publishEvent(event);
+    } catch {
+      // Publishing is observational — swallow errors to avoid crashing the run.
+    }
+  }
+
   private async transitionRun(run: Run, target: RunStatus): Promise<Run> {
     const result = transitionRunStatus(run.status, target);
     if (!result.success) {
@@ -350,7 +387,7 @@ export class WorkflowExecutor {
     run.completedAt = new Date().toISOString();
     run.updatedAt = new Date().toISOString();
     await this.store.runs.update(run.id, run);
-    await this.publisher.publishRunEvent(run, 'run.failed');
+    await this.safePublishRunEvent(run, 'run.failed');
     return run;
   }
 
@@ -372,7 +409,7 @@ export class WorkflowExecutor {
     }
 
     await this.store.runs.update(run.id, run);
-    await this.publisher.publishRunEvent(run, 'run.canceled');
+    await this.safePublishRunEvent(run, 'run.canceled');
     this.canceledRuns.delete(run.id);
     return run;
   }
@@ -422,7 +459,7 @@ export class WorkflowExecutor {
     await this.store.provenance.create(provenance);
     run.provenanceId = provenance.id;
     await this.store.runs.update(run.id, run);
-    await this.publisher.publishEvent({
+    await this.safePublishEvent({
       id: `evt_${uuid()}`,
       type: 'provenance.recorded',
       schemaVersion: '1.0.0',
@@ -488,7 +525,7 @@ export class WorkflowExecutor {
     await this.store.attestations.create(attestation);
     run.attestationId = attestation.id;
     await this.store.runs.update(run.id, run);
-    await this.publisher.publishEvent({
+    await this.safePublishEvent({
       id: `evt_${uuid()}`,
       type: 'attestation.issued',
       schemaVersion: '1.0.0',

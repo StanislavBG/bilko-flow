@@ -10,6 +10,7 @@
 import { Router } from 'express';
 import { pbkdf2Sync, randomBytes, timingSafeEqual } from 'crypto';
 import { Store } from '../storage/store';
+import { apiError, validationError, authError, notFoundError } from '../domain/errors';
 
 const PBKDF2_ITERATIONS = 100_000;
 const PBKDF2_KEYLEN = 64;
@@ -51,19 +52,19 @@ export function createAuthRoutes(store: Store): Router {
       const { identityId, password } = req.body;
 
       if (!identityId || !password) {
-        res.status(400).json({ error: { message: 'identityId and password are required' } });
+        res.status(400).json(apiError(validationError('identityId and password are required')));
         return;
       }
 
       const credential = await store.credentials.get(identityId);
       if (!credential || !verifyPassword(password, credential.passwordHash)) {
-        res.status(401).json({ error: { message: 'Invalid credentials' } });
+        res.status(401).json(apiError(authError('Invalid credentials')));
         return;
       }
 
       const account = await store.accounts.getById(credential.accountId);
       if (!account) {
-        res.status(404).json({ error: { message: 'Account not found' } });
+        res.status(404).json(apiError(notFoundError('Account', credential.accountId)));
         return;
       }
 
@@ -82,9 +83,12 @@ export function createAuthRoutes(store: Store): Router {
         identity: identityId,
       });
     } catch (err) {
-      res.status(500).json({
-        error: { message: err instanceof Error ? err.message : 'Login failed' },
-      });
+      res.status(500).json(apiError({
+        code: 'AUTH.INTERNAL',
+        message: err instanceof Error ? err.message : 'Login failed',
+        retryable: false,
+        suggestedFixes: [],
+      }));
     }
   });
 

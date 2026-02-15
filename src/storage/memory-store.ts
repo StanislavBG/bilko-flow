@@ -75,21 +75,21 @@ class MemoryAccountStore implements AccountStore {
   private data = new Map<string, Account>();
 
   async create(account: Account): Promise<Account> {
-    this.data.set(account.id, { ...account });
-    return { ...account };
+    this.data.set(account.id, deepCopy(account));
+    return deepCopy(account);
   }
 
   async getById(id: string): Promise<Account | null> {
     const account = this.data.get(id);
-    return account ? { ...account } : null;
+    return account ? deepCopy(account) : null;
   }
 
   async update(id: string, updates: Partial<Account>): Promise<Account | null> {
     const existing = this.data.get(id);
     if (!existing) return null;
-    const updated = { ...existing, ...updates, updatedAt: new Date().toISOString() };
+    const updated = { ...deepCopy(existing), ...deepCopy(updates), updatedAt: new Date().toISOString() };
     this.data.set(id, updated);
-    return { ...updated };
+    return deepCopy(updated);
   }
 }
 
@@ -97,19 +97,19 @@ class MemoryProjectStore implements ProjectStore {
   private data = new Map<string, Project>();
 
   async create(project: Project): Promise<Project> {
-    this.data.set(project.id, { ...project });
-    return { ...project };
+    this.data.set(project.id, deepCopy(project));
+    return deepCopy(project);
   }
 
   async getById(id: string, accountId: string): Promise<Project | null> {
     const project = this.data.get(id);
     if (!project || project.accountId !== accountId) return null;
-    return { ...project };
+    return deepCopy(project);
   }
 
   async listByAccount(accountId: string, options?: ListOptions): Promise<Project[]> {
     const items = [...this.data.values()].filter((p) => p.accountId === accountId);
-    return applyListOptions(items, options);
+    return applyListOptions(items.map(deepCopy), options);
   }
 }
 
@@ -117,21 +117,21 @@ class MemoryEnvironmentStore implements EnvironmentStore {
   private data = new Map<string, Environment>();
 
   async create(env: Environment): Promise<Environment> {
-    this.data.set(env.id, { ...env });
-    return { ...env };
+    this.data.set(env.id, deepCopy(env));
+    return deepCopy(env);
   }
 
   async getById(id: string, accountId: string, projectId: string): Promise<Environment | null> {
     const env = this.data.get(id);
     if (!env || env.accountId !== accountId || env.projectId !== projectId) return null;
-    return { ...env };
+    return deepCopy(env);
   }
 
   async listByProject(accountId: string, projectId: string, options?: ListOptions): Promise<Environment[]> {
     const items = [...this.data.values()].filter(
       (e) => e.accountId === accountId && e.projectId === projectId,
     );
-    return applyListOptions(items, options);
+    return applyListOptions(items.map(deepCopy), options);
   }
 }
 
@@ -251,8 +251,8 @@ class MemoryArtifactStore implements ArtifactStore {
   private data = new Map<string, Artifact>();
 
   async create(artifact: Artifact): Promise<Artifact> {
-    this.data.set(artifact.id, { ...artifact });
-    return { ...artifact };
+    this.data.set(artifact.id, deepCopy(artifact));
+    return deepCopy(artifact);
   }
 
   async getById(id: string, scope: TenantScope): Promise<Artifact | null> {
@@ -261,7 +261,7 @@ class MemoryArtifactStore implements ArtifactStore {
     if (art.accountId !== scope.accountId || art.projectId !== scope.projectId || art.environmentId !== scope.environmentId) {
       return null;
     }
-    return { ...art };
+    return deepCopy(art);
   }
 
   async listByRun(runId: string, scope: TenantScope, options?: ListOptions): Promise<Artifact[]> {
@@ -272,7 +272,7 @@ class MemoryArtifactStore implements ArtifactStore {
         a.projectId === scope.projectId &&
         a.environmentId === scope.environmentId,
     );
-    return applyListOptions(items, options);
+    return applyListOptions(items.map(deepCopy), options);
   }
 }
 
@@ -348,14 +348,14 @@ class MemoryRoleBindingStore implements RoleBindingStore {
   private data = new Map<string, RoleBinding>();
 
   async create(binding: RoleBinding): Promise<RoleBinding> {
-    this.data.set(binding.id, { ...binding });
-    return { ...binding };
+    this.data.set(binding.id, deepCopy(binding));
+    return deepCopy(binding);
   }
 
   async listByIdentity(identityId: string, accountId: string): Promise<RoleBinding[]> {
-    return [...this.data.values()].filter(
-      (b) => b.identityId === identityId && b.accountId === accountId,
-    );
+    return [...this.data.values()]
+      .filter((b) => b.identityId === identityId && b.accountId === accountId)
+      .map(deepCopy);
   }
 
   async listByScope(accountId: string, projectId?: string, environmentId?: string): Promise<RoleBinding[]> {
@@ -364,7 +364,7 @@ class MemoryRoleBindingStore implements RoleBindingStore {
       if (projectId !== undefined && b.projectId !== projectId) return false;
       if (environmentId !== undefined && b.environmentId !== environmentId) return false;
       return true;
-    });
+    }).map(deepCopy);
   }
 
   async delete(id: string): Promise<boolean> {
@@ -376,8 +376,8 @@ class MemoryAuditStore implements AuditStore {
   private data: AuditRecord[] = [];
 
   async create(record: AuditRecord): Promise<AuditRecord> {
-    this.data.push({ ...record });
-    return { ...record };
+    this.data.push(deepCopy(record));
+    return deepCopy(record);
   }
 
   async listByScope(
@@ -387,27 +387,51 @@ class MemoryAuditStore implements AuditStore {
     let items = this.data.filter((r) => r.accountId === accountId);
     if (options?.projectId) items = items.filter((r) => r.projectId === options.projectId);
     if (options?.environmentId) items = items.filter((r) => r.environmentId === options.environmentId);
-    return applyListOptions(items, options);
+    return applyListOptions(items.map(deepCopy), options);
   }
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * EVENT STORE — INDEXED BY runId (v0.3.0 — RESILIENCY ENHANCEMENT)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The architectural audit identified that `listByRun()` used an O(n) linear
+ * scan over all events. Since every step execution produces multiple events,
+ * this scales linearly with total event count — unacceptable for
+ * long-running servers with many runs.
+ *
+ * Added a `runIdIndex` Map<runId, eventIndex[]> for O(1) lookup by runId.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 class MemoryEventStore implements EventStore {
   private data: DataPlaneEvent[] = [];
+  private runIdIndex = new Map<string, number[]>();
 
   async create(event: DataPlaneEvent): Promise<DataPlaneEvent> {
-    this.data.push({ ...event });
-    return { ...event };
+    const copy = deepCopy(event);
+    const idx = this.data.length;
+    this.data.push(copy);
+    if (event.runId) {
+      const indices = this.runIdIndex.get(event.runId) ?? [];
+      indices.push(idx);
+      this.runIdIndex.set(event.runId, indices);
+    }
+    return deepCopy(event);
   }
 
   async listByRun(runId: string, scope: TenantScope, options?: ListOptions): Promise<DataPlaneEvent[]> {
-    const items = this.data.filter(
-      (e) =>
-        e.runId === runId &&
-        e.accountId === scope.accountId &&
-        e.projectId === scope.projectId &&
-        e.environmentId === scope.environmentId,
-    );
-    return applyListOptions(items, options);
+    const indices = this.runIdIndex.get(runId);
+    if (!indices) return [];
+    const items = indices
+      .map((i) => this.data[i])
+      .filter(
+        (e) =>
+          e.accountId === scope.accountId &&
+          e.projectId === scope.projectId &&
+          e.environmentId === scope.environmentId,
+      );
+    return applyListOptions(items.map(deepCopy), options);
   }
 
   async listByScope(
@@ -423,7 +447,7 @@ class MemoryEventStore implements EventStore {
     if (options?.eventTypes?.length) {
       items = items.filter((e) => options.eventTypes!.includes(e.type));
     }
-    return applyListOptions(items, options);
+    return applyListOptions(items.map(deepCopy), options);
   }
 }
 
@@ -431,12 +455,12 @@ class MemoryCredentialStore implements CredentialStore {
   private data = new Map<string, CredentialRecord>();
 
   async set(identityId: string, record: CredentialRecord): Promise<void> {
-    this.data.set(identityId, { ...record });
+    this.data.set(identityId, deepCopy(record));
   }
 
   async get(identityId: string): Promise<CredentialRecord | null> {
     const record = this.data.get(identityId);
-    return record ? { ...record } : null;
+    return record ? deepCopy(record) : null;
   }
 }
 

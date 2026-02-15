@@ -6,6 +6,7 @@
  */
 
 import { HashRecord } from './provenance';
+import { DeterminismGrade } from './determinism';
 
 /** Attestation status. */
 export enum AttestationStatus {
@@ -33,7 +34,7 @@ export interface AttestationStatement {
   /** Hashes of artifacts produced. */
   artifactHashes: Record<string, HashRecord>;
   /** Determinism grade claimed. */
-  determinismGrade: string;
+  determinismGrade: DeterminismGrade;
 }
 
 /** A signed attestation for a run. */

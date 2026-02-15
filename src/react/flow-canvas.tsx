@@ -247,6 +247,7 @@ export function FlowCanvas({
           onClick={zoomIn}
           className="p-1.5 rounded bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
           title="Zoom in (+)"
+          aria-label="Zoom in"
         >
           <ZoomIn size={16} />
         </button>
@@ -254,6 +255,7 @@ export function FlowCanvas({
           onClick={zoomOut}
           className="p-1.5 rounded bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
           title="Zoom out (-)"
+          aria-label="Zoom out"
         >
           <ZoomOut size={16} />
         </button>
@@ -261,6 +263,7 @@ export function FlowCanvas({
           onClick={fitView}
           className="p-1.5 rounded bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
           title="Fit view (F)"
+          aria-label="Fit view"
         >
           <Maximize2 size={16} />
         </button>
@@ -268,6 +271,7 @@ export function FlowCanvas({
           onClick={() => setSearchOpen(s => !s)}
           className="p-1.5 rounded bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
           title="Search (/)"
+          aria-label="Search steps"
         >
           <Search size={16} />
         </button>
@@ -275,6 +279,7 @@ export function FlowCanvas({
           onClick={() => setShowShortcuts(s => !s)}
           className="p-1.5 rounded bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
           title="Shortcuts (?)"
+          aria-label="Keyboard shortcuts"
         >
           <Keyboard size={16} />
         </button>

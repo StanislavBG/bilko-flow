@@ -92,12 +92,24 @@ export class LLMParseError extends Error {
     this.name = 'LLMParseError';
     this.rawResponse = rawResponse;
     this.attempts = attempts;
+    /**
+     * ═══════════════════════════════════════════════════════════════════
+     * rawResponsePreview is TRUNCATED to 200 chars (v0.3.0 — RESILIENCY)
+     * ═══════════════════════════════════════════════════════════════════
+     *
+     * The audit identified that raw LLM responses included in TypedError
+     * details could leak API keys, tokens, or sensitive content when the
+     * error propagates to API responses, webhook payloads, or event
+     * streams. Truncating to 200 chars limits exposure while still
+     * providing enough context for debugging.
+     * ═══════════════════════════════════════════════════════════════════
+     */
     this.typedError = createTypedError({
       code: 'PLANNER.LLM_PARSE',
       message,
       retryable: false,
       details: {
-        rawResponsePreview: rawResponse.slice(0, 500),
+        rawResponsePreview: rawResponse.slice(0, 200),
         attempts,
       },
       suggestedFixes: [
