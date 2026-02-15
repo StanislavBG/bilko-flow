@@ -9,17 +9,6 @@
  * own their own identity and tenancy models.
  */
 
-import { createApp, createAppContext } from './server';
-
-const PORT = parseInt(process.env.PORT ?? '5000', 10);
-
-const context = createAppContext();
-const app = createApp(context);
-
-app.listen(PORT);
-
-// Public exports for programmatic use
-export { createApp, createAppContext } from './server';
 export * from './domain';
 export * from './dsl';
 export * from './engine';
