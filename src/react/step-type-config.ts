@@ -166,8 +166,16 @@ export function getStepVisuals(step: FlowStep): StepTypeVisuals {
 /**
  * Default FlowProgress theme pre-configured for bilko domain step types.
  *
- * Step colors map both UI step types and domain step types to their
- * accent bg classes. Status colors use standard green/red/gray palette.
+ * ═══════════════════════════════════════════════════════════════════════════
+ * v0.3.0: Added `skippedColor` and `skippedTextColor`.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Skipped steps use `bg-gray-500` (dimmer than completed green) and
+ * `text-gray-400` (with strikethrough applied by the renderer) to
+ * clearly communicate "this step existed but was intentionally bypassed."
+ *
+ * All other defaults remain unchanged for backwards compatibility.
+ * ═══════════════════════════════════════════════════════════════════════════
  */
 export const DEFAULT_FLOW_PROGRESS_THEME: FlowProgressTheme = {
   stepColors: {
@@ -200,10 +208,12 @@ export const DEFAULT_FLOW_PROGRESS_THEME: FlowProgressTheme = {
   completedColor: 'bg-green-500',
   errorColor: 'bg-red-500',
   pendingColor: 'bg-gray-700',
+  skippedColor: 'bg-gray-500',
   activeTextColor: 'text-green-400',
   completedTextColor: 'text-gray-300',
   errorTextColor: 'text-red-400',
   pendingTextColor: 'text-gray-500',
+  skippedTextColor: 'text-gray-400',
 };
 
 /**

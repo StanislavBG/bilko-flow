@@ -28,6 +28,8 @@ import {
   statusDotClass,
   statusLabel,
   computeWindow,
+  resolveStepMeta,
+  getStatusIcon,
 } from './flow-progress-shared';
 
 /** Props for the vertical progress component */
@@ -144,7 +146,7 @@ export function FlowProgressVertical(props: FlowProgressVerticalProps) {
             <div key={step.id} className="flex gap-3 relative" data-testid={`vertical-step-${step.id}`}>
               {/* Rail column: icon + connector */}
               <div className="flex flex-col items-center flex-shrink-0" style={{ width: '1.5rem' }}>
-                {/* Status icon */}
+                {/* Status icon — v0.3.0: handles 'skipped' with SkipForward icon */}
                 <div className="flex items-center justify-center w-full h-6 z-10">
                   {step.status === 'complete' ? (
                     <CheckCircle2 size={18} className="text-green-500" />
@@ -156,6 +158,8 @@ export function FlowProgressVertical(props: FlowProgressVerticalProps) {
                     )
                   ) : step.status === 'error' ? (
                     <XCircle size={18} className="text-red-500" />
+                  ) : step.status === 'skipped' ? (
+                    getStatusIcon('skipped', 18)
                   ) : (
                     <Circle size={18} className="text-gray-500" />
                   )}
@@ -185,6 +189,7 @@ export function FlowProgressVertical(props: FlowProgressVerticalProps) {
                     isActive ? 'text-white font-medium' :
                     step.status === 'complete' ? 'text-gray-300' :
                     step.status === 'error' ? 'text-red-300' :
+                    step.status === 'skipped' ? 'text-gray-400 line-through' :
                     'text-gray-400'
                   }`}>
                     {step.label}
@@ -193,6 +198,27 @@ export function FlowProgressVertical(props: FlowProgressVerticalProps) {
                     <span className={`w-2 h-2 rounded-full ${typeDotColor} flex-shrink-0 ml-auto`} />
                   )}
                 </div>
+                {/*
+                 * v0.3.0: Render meta.message beneath the step label in vertical mode.
+                 * Shows message for any status, skipReason for skipped, error for error.
+                 * Activity text is still shown on active steps (below meta.message).
+                 */}
+                {(() => {
+                  const resolved = resolveStepMeta(step.meta);
+                  const displayText = resolved.message
+                    ?? (step.status === 'skipped' ? resolved.skipReason : undefined)
+                    ?? (step.status === 'error' ? resolved.error : undefined);
+                  if (!displayText) return null;
+                  return (
+                    <p className={`mt-0.5 text-xs truncate ${
+                      step.status === 'error' ? 'text-red-400' :
+                      step.status === 'skipped' ? 'text-gray-500 italic' :
+                      'text-gray-400'
+                    }`}>
+                      {displayText}
+                    </p>
+                  );
+                })()}
                 {/* Activity text on active step */}
                 {isActive && activity && (
                   <p className="mt-1 text-xs text-gray-400 truncate">{activity}</p>

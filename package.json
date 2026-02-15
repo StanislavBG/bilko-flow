@@ -1,6 +1,6 @@
 {
   "name": "bilko-flow",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Typed DSL, determinism model, and planner protocol for deterministic workflow creation — designed for AI agent consumption",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -12,10 +12,16 @@
     "./react": {
       "types": "./dist/react/index.d.ts",
       "default": "./dist/react/index.js"
-    }
+    },
+    "./react/components": {
+      "types": "./dist/react/components.d.ts",
+      "default": "./dist/react/components.js"
+    },
+    "./styles.css": "./dist/styles.css"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp src/styles.css dist/styles.css",
+    "build:css": "cp src/styles.css dist/styles.css",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "test": "jest --forceExit",

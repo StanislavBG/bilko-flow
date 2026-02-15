@@ -1,0 +1,132 @@
+/**
+ * bilko-flow/styles.css — Pre-built CSS for bilko-flow React components.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * WHY THIS FILE EXISTS (v0.3.0 — RESILIENCY ENHANCEMENT)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The NPR feedback identified that Tailwind CSS scanning bilko-flow's
+ * React component source files added 47 KB to the consumer's bundle —
+ * even when most components weren't being used. This happened because
+ * Tailwind's JIT compiler scans ALL files matched by the `content`
+ * configuration, not just the components that are actually rendered.
+ *
+ * The solution is to ship this pre-built CSS file that consumers can
+ * import instead of pointing Tailwind's content scanner at bilko-flow:
+ *
+ * ```ts
+ * // Consumer's main CSS or layout file:
+ * import 'bilko-flow/styles.css';
+ * ```
+ *
+ * This file contains ONLY the Tailwind utility classes actually used by
+ * bilko-flow's React components. No unused classes are included.
+ *
+ * ## FOR CONSUMERS USING TAILWIND
+ *
+ * BEFORE (scans all component files — 47 KB overhead):
+ * ```js
+ * // tailwind.config.js
+ * module.exports = {
+ *   content: [
+ *     './src/**\/*.{ts,tsx}',
+ *     './node_modules/bilko-flow/dist/react/**\/*.js', // ← causes scanning overhead
+ *   ],
+ * };
+ * ```
+ *
+ * AFTER (import pre-built CSS — near-zero overhead):
+ * ```js
+ * // tailwind.config.js
+ * module.exports = {
+ *   content: [
+ *     './src/**\/*.{ts,tsx}',
+ *     // No bilko-flow entry needed!
+ *   ],
+ * };
+ * ```
+ * ```ts
+ * // main.tsx or layout.tsx
+ * import 'bilko-flow/styles.css';
+ * ```
+ *
+ * ## FOR CONSUMERS NOT USING TAILWIND
+ *
+ * This file also works as a standalone stylesheet. Import it once in
+ * your application entry point and all bilko-flow components will
+ * render correctly without any Tailwind configuration.
+ *
+ * ## BUILD PROCESS
+ *
+ * This file is generated during `npm run build:css` which runs Tailwind
+ * CLI against bilko-flow's own source files. It is also included in the
+ * published package so consumers don't need Tailwind installed.
+ *
+ * To regenerate: `npx tailwindcss -i src/styles.css -o dist/styles.css --minify`
+ *
+ * The CSS below is the SEED content — the actual utility classes are
+ * appended by the Tailwind CLI during build. For development, Tailwind's
+ * JIT compiler generates classes on the fly. This file serves as the
+ * input stylesheet with necessary @tailwind directives.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * ═══════════════════════════════════════════════════════════════════════════
+ * COMPONENT-SPECIFIC STYLES
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * These are styles that can't be expressed as Tailwind utilities or need
+ * to override Tailwind's defaults for bilko-flow's dark theme.
+ */
+
+/*
+ * Skipped step visual treatment (v0.3.0).
+ * Applied in addition to the Tailwind classes set by the renderer.
+ * Uses opacity reduction and strikethrough to clearly communicate
+ * "this step was intentionally bypassed."
+ */
+.bilko-step-skipped {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+/*
+ * Meta message line beneath step labels.
+ * Uses a slightly smaller font and reduced opacity to maintain
+ * visual hierarchy: label (primary) > step info (secondary) > meta (tertiary).
+ */
+.bilko-step-meta {
+  font-size: 10px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * SSE connection state indicator (optional — for consumers who want
+ * to show connection status in their UI).
+ */
+.bilko-sse-connecting {
+  animation: bilko-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes bilko-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/*
+ * Mini progress bar for meta.progress (0–1 fraction).
+ * Consumers can render this as an overlay or inline indicator.
+ */
+.bilko-step-progress-bar {
+  height: 2px;
+  border-radius: 1px;
+  transition: width 300ms ease-out;
+}

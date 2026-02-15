@@ -66,8 +66,11 @@ import {
   computeWindow,
   getLabelMode,
   truncateLabel,
+  resolveStepMeta,
+  applyStatusMap,
+  getStatusIcon,
 } from './flow-progress-shared';
-import type { WindowItem } from './flow-progress-shared';
+import type { WindowItem, ResolvedStepMeta } from './flow-progress-shared';
 
 /** Ellipsis dropdown for hidden steps */
 function EllipsisDropdown({
@@ -298,15 +301,19 @@ function FullMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTheme 
                       ? `ring-4 ring-opacity-30 scale-110`
                       : ''
                     }
+                    ${step.status === 'skipped' ? 'opacity-60' : ''}
                   `}
                   style={step.status === 'active' ? {
                     boxShadow: `0 0 0 4px rgba(34, 197, 94, 0.3)`,
                   } : undefined}
                 >
+                  {/* v0.3.0: Use centralized getStatusIcon for all statuses including 'skipped' */}
                   {step.status === 'complete' ? (
                     <CheckCircle2 size={18} />
                   ) : step.status === 'error' ? (
                     <AlertCircle size={18} />
+                  ) : step.status === 'skipped' ? (
+                    getStatusIcon('skipped', 18)
                   ) : (
                     index + 1
                   )}
@@ -480,7 +487,7 @@ function CompactMode(props: FlowProgressProps & { resolvedTheme: FlowProgressThe
                 className="flex items-center gap-1 group"
                 onClick={() => onStepClick?.(step.id)}
               >
-                {/* Status icon — type-aware in compact mode */}
+                {/* Status icon — type-aware in compact mode. v0.3.0: handles 'skipped' */}
                 {step.status === 'complete' ? (
                   <CheckCircle2 size={14} className="text-green-500 flex-shrink-0" />
                 ) : step.status === 'active' ? (
@@ -493,6 +500,10 @@ function CompactMode(props: FlowProgressProps & { resolvedTheme: FlowProgressThe
                   )
                 ) : step.status === 'error' ? (
                   <XCircle size={14} className="text-red-500 flex-shrink-0" />
+                ) : step.status === 'skipped' ? (
+                  <span className="text-gray-400 flex-shrink-0 opacity-60">
+                    {getStatusIcon('skipped', 14)}
+                  </span>
                 ) : typeIcon ? (
                   <span className="text-gray-500 flex-shrink-0">{typeIcon}</span>
                 ) : (
@@ -674,19 +685,22 @@ function ExpandedMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
                 onClick={() => onStepClick?.(step.id)}
                 aria-label={`Step ${index + 1}: ${step.label}`}
               >
-                {/* Status/type indicator */}
+                {/* Status/type indicator — v0.3.0: handles 'skipped' with SkipForward icon */}
                 <div
                   className={`
                     w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0
                     text-white text-sm font-medium
                     ${bgColor}
                     ${isActive ? 'animate-pulse' : ''}
+                    ${step.status === 'skipped' ? 'opacity-60' : ''}
                   `}
                 >
                   {step.status === 'complete' ? (
                     <CheckCircle2 size={16} />
                   ) : step.status === 'error' ? (
                     <AlertCircle size={16} />
+                  ) : step.status === 'skipped' ? (
+                    getStatusIcon('skipped', 16)
                   ) : typeIcon ? (
                     <span className="flex items-center justify-center">{typeIcon}</span>
                   ) : (
@@ -694,12 +708,13 @@ function ExpandedMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
                   )}
                 </div>
 
-                {/* Label + step number */}
+                {/* Label + step number + meta.message */}
                 <div className="min-w-0 flex-1">
                   <div className={`text-sm truncate ${
                     isActive ? 'text-white font-medium' :
                     step.status === 'complete' ? 'text-gray-300' :
                     step.status === 'error' ? 'text-red-300' :
+                    step.status === 'skipped' ? 'text-gray-400 line-through' :
                     'text-gray-400'
                   }`}>
                     {step.label}
@@ -707,6 +722,39 @@ function ExpandedMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
                   <div className="text-xs text-gray-500 truncate">
                     Step {index + 1}{step.type ? ` \u00b7 ${step.type}` : ''}
                   </div>
+                  {/*
+                   * ═══════════════════════════════════════════════════════
+                   * META.MESSAGE RENDERING (v0.3.0)
+                   * ═══════════════════════════════════════════════════════
+                   *
+                   * This is the per-step message display that was the #1
+                   * friction point in the NPR feedback. Rendered as a
+                   * third line beneath label and step number, in a muted
+                   * color to maintain visual hierarchy:
+                   *   Line 1: Step label (primary)
+                   *   Line 2: "Step N · type" (secondary)
+                   *   Line 3: meta.message (tertiary, e.g. "Chunk 2/5")
+                   *
+                   * Also shows meta.skipReason for skipped steps and
+                   * meta.error for error steps as contextual detail.
+                   * ═══════════════════════════════════════════════════════
+                   */}
+                  {(() => {
+                    const resolved = resolveStepMeta(step.meta);
+                    const displayText = resolved.message
+                      ?? (step.status === 'skipped' ? resolved.skipReason : undefined)
+                      ?? (step.status === 'error' ? resolved.error : undefined);
+                    if (!displayText) return null;
+                    return (
+                      <div className={`text-[10px] truncate mt-0.5 ${
+                        step.status === 'error' ? 'text-red-400' :
+                        step.status === 'skipped' ? 'text-gray-500 italic' :
+                        'text-gray-400'
+                      }`}>
+                        {displayText}
+                      </div>
+                    );
+                  })()}
                 </div>
               </button>
 
@@ -841,10 +889,12 @@ function PipelineMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
           const isActive = step.status === 'active';
           const isComplete = step.status === 'complete';
           const isError = step.status === 'error';
+          const isSkipped = step.status === 'skipped';
           const bgColor = resolveStepBg(step, theme);
           const textColor = resolveStepTextColor(step, theme, isActive);
           const typeIcon = step.type ? getTypeIcon(step.type) : null;
           const duration = config.showDuration && config.stageDurations?.[step.id];
+          const stepMeta = resolveStepMeta(step.meta);
 
           // Custom step renderer
           if (stepRenderer) {
@@ -898,6 +948,8 @@ function PipelineMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
                   <CheckCircle2 size={config.stageSize * 0.5} />
                 ) : isError ? (
                   <AlertCircle size={config.stageSize * 0.5} />
+                ) : isSkipped ? (
+                  getStatusIcon('skipped', config.stageSize * 0.5)
                 ) : isActive ? (
                   typeIcon ? (
                     <span className="animate-pulse flex items-center justify-center">{typeIcon}</span>
@@ -913,7 +965,7 @@ function PipelineMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
                 )}
               </div>
 
-              {/* Stage label */}
+              {/* Stage label — v0.3.0: handles 'skipped' with strikethrough */}
               <span
                 className={`
                   mt-2.5 text-xs text-center leading-tight max-w-[100px] truncate
@@ -921,12 +973,24 @@ function PipelineMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
                   ${isActive ? 'text-white font-semibold' :
                     isComplete ? 'text-gray-300 font-medium' :
                     isError ? 'text-red-400 font-medium' :
+                    isSkipped ? 'text-gray-400 line-through' :
                     'text-gray-500'}
                   group-hover:text-gray-200
                 `}
               >
                 {step.label}
               </span>
+
+              {/* v0.3.0: meta.message beneath pipeline stage label */}
+              {stepMeta.message && (
+                <span className={`mt-0.5 text-[10px] truncate max-w-[100px] text-center ${
+                  isError ? 'text-red-400' :
+                  isSkipped ? 'text-gray-500 italic' :
+                  'text-gray-400'
+                }`}>
+                  {stepMeta.message}
+                </span>
+              )}
 
               {/* Duration label (optional) */}
               {duration && (
@@ -1061,9 +1125,39 @@ function PipelineMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
  * ```
  */
 export function FlowProgress(props: FlowProgressProps): React.JSX.Element {
-  const { mode, className, theme, autoBreakpoint } = props;
+  const { mode, className, theme, autoBreakpoint, statusMap } = props;
 
   const resolvedTheme = useMemo(() => mergeTheme(theme), [theme]);
+
+  /*
+   * ═══════════════════════════════════════════════════════════════════════
+   * STATUS MAP APPLICATION (v0.3.0)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * If the consumer provided a `statusMap`, normalize all step statuses
+   * BEFORE any rendering happens. This means all downstream mode
+   * components (FullMode, CompactMode, ExpandedMode, etc.) receive
+   * steps with valid built-in statuses and don't need to know about
+   * custom status vocabularies.
+   *
+   * The mapping is memoized so it only recomputes when steps or the
+   * statusMap reference change — not on every parent re-render.
+   * ═══════════════════════════════════════════════════════════════════════
+   */
+  const normalizedSteps = useMemo(
+    () => applyStatusMap(props.steps, statusMap),
+    [props.steps, statusMap],
+  );
+
+  /*
+   * Create a new props object with normalized steps. This is a shallow
+   * copy — all other props pass through unchanged. We do this rather
+   * than mutating to preserve React's immutability contract.
+   */
+  const normalizedProps = useMemo(
+    () => ({ ...props, steps: normalizedSteps }),
+    [props, normalizedSteps],
+  );
 
   // --- Auto mode: measure container width with ResizeObserver ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1101,23 +1195,23 @@ export function FlowProgress(props: FlowProgressProps): React.JSX.Element {
     <div ref={containerRef} className={`max-w-full overflow-hidden ${className ?? ''}`} data-testid={mode === 'auto' ? 'auto-mode-container' : undefined}>
       {effectiveMode === 'vertical'
         ? <FlowProgressVertical
-            steps={props.steps}
-            label={props.label}
-            status={props.status}
-            activity={props.activity}
-            lastResult={props.lastResult}
-            onReset={props.onReset}
-            onStepClick={props.onStepClick}
+            steps={normalizedSteps}
+            label={normalizedProps.label}
+            status={normalizedProps.status}
+            activity={normalizedProps.activity}
+            lastResult={normalizedProps.lastResult}
+            onReset={normalizedProps.onReset}
+            onStepClick={normalizedProps.onStepClick}
             theme={resolvedTheme}
-            radius={props.radius}
+            radius={normalizedProps.radius}
           />
         : effectiveMode === 'pipeline'
-          ? <PipelineMode {...props} resolvedTheme={resolvedTheme} />
+          ? <PipelineMode {...normalizedProps} resolvedTheme={resolvedTheme} />
           : effectiveMode === 'full'
-            ? <FullMode {...props} resolvedTheme={resolvedTheme} />
+            ? <FullMode {...normalizedProps} resolvedTheme={resolvedTheme} />
             : effectiveMode === 'expanded'
-              ? <ExpandedMode {...props} resolvedTheme={resolvedTheme} />
-              : <CompactMode {...props} resolvedTheme={resolvedTheme} />
+              ? <ExpandedMode {...normalizedProps} resolvedTheme={resolvedTheme} />
+              : <CompactMode {...normalizedProps} resolvedTheme={resolvedTheme} />
       }
     </div>
   );
