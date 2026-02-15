@@ -430,6 +430,72 @@ export interface PipelineConfig {
   stageDurations?: Record<string, string>;
 }
 
+/**
+ * Configuration for the enhanced multi-breakpoint auto-mode.
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * MULTI-BREAKPOINT AUTO-MODE (v0.3.0)
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ * The enhanced auto-mode uses a 4-tier breakpoint system to select the
+ * optimal rendering mode based on container width and flow complexity:
+ *
+ *   Container Width:  0 ──── 480px ──── 640px ──── 900px ──── ...
+ *                     │       │         │         │
+ *   Resolved Mode:  vertical compact  expanded   full
+ *
+ * Additional context-aware rules:
+ * - When `parallelThreads` are present, vertical mode is skipped
+ *   (it doesn't render threads) and compact is used instead
+ * - When `pipelineConfig` is provided and no parallel threads exist,
+ *   pipeline mode is selected at ≥ expanded threshold width
+ *
+ * ## FOR AGENT / LLM AUTHORS
+ *
+ * Auto mode is the RECOMMENDED default. Use it when you don't know the
+ * exact container width or when the container is responsive. The multi-
+ * breakpoint system handles all common layout scenarios automatically.
+ *
+ * Override breakpoints only when your layout has non-standard dimensions
+ * (e.g., a sidebar that's always 300px → set compact threshold lower).
+ *
+ * @example Default auto mode (recommended)
+ * ```tsx
+ * <FlowProgress mode="auto" steps={steps} status="running" />
+ * ```
+ *
+ * @example Custom breakpoints for narrow sidebar
+ * ```tsx
+ * <FlowProgress
+ *   mode="auto"
+ *   steps={steps}
+ *   status="running"
+ *   autoModeConfig={{ breakpoints: { compact: 320, expanded: 500, full: 800 } }}
+ * />
+ * ```
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+export interface AutoModeConfig {
+  /**
+   * Width breakpoints (in px) for mode transitions.
+   *
+   * - Below `compact` → vertical mode (or compact if parallel threads exist)
+   * - Below `expanded` → compact mode
+   * - Below `full` → expanded mode
+   * - At or above `full` → full mode
+   *
+   * Defaults: { compact: 480, expanded: 640, full: 900 }
+   */
+  breakpoints?: {
+    /** Width below which vertical mode is used. Default: 480. */
+    compact?: number;
+    /** Width below which compact mode is used. Default: 640. */
+    expanded?: number;
+    /** Width at or above which full mode is used. Default: 900. */
+    full?: number;
+  };
+}
+
 export interface ParallelConfig {
   /**
    * Maximum number of threads rendered simultaneously.
@@ -587,24 +653,35 @@ export type FlowProgressStepRenderer = (
  * - Completed threads auto-collapse to save space.
  *
  * ## CHOOSING THE RIGHT MODE
- * - "compact"  → < 480px width. Parallel threads stack vertically as mini rows.
- * - "expanded" → 480–900px. Each thread gets a bordered lane with step cards.
- * - "full"     → > 900px. Full stepper lanes with numbered circles per thread.
- * - "auto"     → Dynamic switching between expanded and compact.
+ * - "auto"     → (RECOMMENDED) Smart 4-tier mode that adapts automatically.
+ *                Uses vertical, compact, expanded, or full based on container
+ *                width. Also detects parallel threads and pipeline config.
+ * - "compact"  → 480–639px width. Parallel threads stack as mini rows.
+ * - "expanded" → 640–899px. Each thread gets a bordered lane with step cards.
+ * - "full"     → ≥ 900px. Full stepper lanes with numbered circles per thread.
+ * - "vertical" → < 480px. Top-to-bottom timeline. No parallel thread support.
+ * - "pipeline" → ≥ 640px. Deploy/CI-style. No parallel thread support.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 export interface FlowProgressProps {
   /**
-   * Visual mode:
-   * - "full": Large numbered circles, phase labels, wide connectors, header
-   * - "compact": Small status icons with inline text labels, thin connectors
-   * - "expanded": Rectangular step cards with icon, label, and type — fills available space
-   * - "auto": Dynamically selects "expanded" or "vertical" based on container width
-   * - "vertical": Top-to-bottom timeline with vertical connector rail, ideal for
-   *   mobile screens (< 480px) or narrow containers with abundant vertical space
+   * Visual mode. **"auto" is the recommended default.**
+   *
+   * - "auto": (Recommended) Dynamically selects the optimal mode based on
+   *   container width using a 4-tier breakpoint system:
+   *     < 480px → vertical | 480–639px → compact | 640–899px → expanded | ≥ 900px → full
+   *   Also detects parallel threads (avoids vertical) and pipeline config
+   *   (auto-selects pipeline). Configure thresholds via `autoModeConfig`.
+   * - "full": Large numbered circles, phase labels, wide connectors, header.
+   *   Best for wide containers (> 900px).
+   * - "compact": Small status icons with inline text labels, thin connectors.
+   *   Best for sidebars and narrow containers (480–639px).
+   * - "expanded": Rectangular step cards with icon, label, and type.
+   *   Best for medium containers (640–899px).
+   * - "vertical": Top-to-bottom timeline with vertical connector rail.
+   *   Best for mobile (< 480px) with abundant vertical space.
    * - "pipeline": Clean deploy/CI-style horizontal progress with large stage
-   *   indicators, continuous track, and prominent labels. Best for deployment
-   *   flows, publish pipelines, and promotion workflows (≥ 500px width).
+   *   indicators. Best for deployment flows (≥ 640px width).
    */
   mode: 'full' | 'compact' | 'expanded' | 'auto' | 'vertical' | 'pipeline';
   /** Steps to display, in order (main chain before any fork point) */
@@ -728,10 +805,37 @@ export interface FlowProgressProps {
   /** Sliding window radius (default: 2) */
   radius?: number;
   /**
-   * Width breakpoint (in px) at which "auto" mode switches from "compact" to "expanded".
-   * Default: 480. Below this value, compact mode is used; at or above, expanded mode is used.
+   * Legacy width breakpoint (in px) for auto mode.
+   *
+   * Maps to `autoModeConfig.breakpoints.compact` in the enhanced
+   * multi-breakpoint system. When both `autoBreakpoint` and
+   * `autoModeConfig.breakpoints.compact` are set, the `autoModeConfig`
+   * value takes precedence.
+   *
+   * Default: 480.
+   *
+   * @deprecated Use `autoModeConfig` for granular multi-breakpoint control.
    */
   autoBreakpoint?: number;
+  /**
+   * Configuration for the enhanced multi-breakpoint auto-mode.
+   *
+   * Provides granular control over the 4-tier breakpoint system that
+   * auto-mode uses to select the optimal rendering mode. See
+   * `AutoModeConfig` for details.
+   *
+   * Only applies when `mode` is "auto".
+   *
+   * @example
+   * ```tsx
+   * <FlowProgress
+   *   mode="auto"
+   *   steps={steps}
+   *   autoModeConfig={{ breakpoints: { compact: 400, expanded: 600, full: 1000 } }}
+   * />
+   * ```
+   */
+  autoModeConfig?: AutoModeConfig;
 }
 
 /** FlowCanvas component props */

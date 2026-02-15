@@ -780,6 +780,27 @@ describe('FlowProgress', () => {
       delete (global as any).ResizeObserver;
     });
 
+    /** Helper to mock container width and trigger ResizeObserver */
+    function simulateResize(container: HTMLElement, width: number) {
+      const el = container.querySelector('[data-testid="auto-mode-container"]')!;
+      jest.spyOn(el, 'getBoundingClientRect').mockReturnValue({
+        width,
+        height: 100,
+        top: 0,
+        left: 0,
+        bottom: 100,
+        right: width,
+        x: 0,
+        y: 0,
+        toJSON: () => {},
+      });
+      act(() => {
+        if (observeCallback) {
+          observeCallback([{ target: el }]);
+        }
+      });
+    }
+
     it('renders auto-mode container with data-testid', () => {
       const { container } = render(
         <FlowProgress mode="auto" steps={mockSteps} status="running" />,
@@ -798,62 +819,175 @@ describe('FlowProgress', () => {
       expect(container.querySelector('[data-testid="expanded-mode"]')).not.toBeInTheDocument();
     });
 
-    it('renders expanded mode when container is wide enough', () => {
+    it('renders compact mode at 480–639px width', () => {
+      const { container } = render(
+        <FlowProgress mode="auto" steps={mockSteps} status="running" />,
+      );
+
+      simulateResize(container, 500);
+
+      // Compact mode has progress-counter but no expanded-mode or vertical-mode
+      expect(container.querySelector('[data-testid="expanded-mode"]')).not.toBeInTheDocument();
+      expect(container.querySelector('[data-testid="vertical-mode"]')).not.toBeInTheDocument();
+      expect(container.querySelector('[data-testid="progress-counter"]')).toBeInTheDocument();
+    });
+
+    it('renders expanded mode at 640–899px width', () => {
+      const { container } = render(
+        <FlowProgress mode="auto" steps={mockSteps} status="running" />,
+      );
+
+      simulateResize(container, 700);
+
+      expect(container.querySelector('[data-testid="expanded-mode"]')).toBeInTheDocument();
+    });
+
+    it('renders expanded mode when container is wide enough (legacy autoBreakpoint)', () => {
       const { container } = render(
         <FlowProgress mode="auto" steps={mockSteps} status="running" autoBreakpoint={200} />,
       );
 
-      // Simulate ResizeObserver firing with a wide container
-      const el = container.querySelector('[data-testid="auto-mode-container"]')!;
-      jest.spyOn(el, 'getBoundingClientRect').mockReturnValue({
-        width: 600,
-        height: 100,
-        top: 0,
-        left: 0,
-        bottom: 100,
-        right: 600,
-        x: 0,
-        y: 0,
-        toJSON: () => {},
-      });
+      // autoBreakpoint=200 maps to compact threshold; expanded threshold remains 640
+      // At 700px: 700 >= 640 (expanded threshold), so expanded mode
+      simulateResize(container, 700);
 
-      // Trigger the ResizeObserver callback wrapped in act for state update
-      act(() => {
-        if (observeCallback) {
-          observeCallback([{ target: el }]);
-        }
-      });
-
-      // After resize, should render expanded mode
       expect(container.querySelector('[data-testid="expanded-mode"]')).toBeInTheDocument();
     });
 
-    it('respects custom autoBreakpoint', () => {
+    it('respects custom autoBreakpoint (legacy)', () => {
       const { container } = render(
         <FlowProgress mode="auto" steps={mockSteps} status="running" autoBreakpoint={800} />,
       );
 
-      const el = container.querySelector('[data-testid="auto-mode-container"]')!;
-      jest.spyOn(el, 'getBoundingClientRect').mockReturnValue({
-        width: 600,
-        height: 100,
-        top: 0,
-        left: 0,
-        bottom: 100,
-        right: 600,
-        x: 0,
-        y: 0,
-        toJSON: () => {},
-      });
+      simulateResize(container, 600);
 
-      act(() => {
-        if (observeCallback) {
-          observeCallback([{ target: el }]);
-        }
-      });
-
-      // 600 < 800 breakpoint, so should stay compact (no expanded-mode)
+      // 600 < 800 (custom compact threshold), so vertical mode
       expect(container.querySelector('[data-testid="expanded-mode"]')).not.toBeInTheDocument();
+    });
+
+    it('renders full mode at 900px+ width', () => {
+      const { container } = render(
+        <FlowProgress mode="auto" steps={mockSteps} status="running" />,
+      );
+
+      simulateResize(container, 1000);
+
+      // Full mode does not have an expanded-mode or vertical-mode test ID
+      // It does have a status-dot and progress-bar
+      expect(container.querySelector('[data-testid="expanded-mode"]')).not.toBeInTheDocument();
+      expect(container.querySelector('[data-testid="vertical-mode"]')).not.toBeInTheDocument();
+      expect(container.querySelector('[data-testid="pipeline-mode"]')).not.toBeInTheDocument();
+      expect(container.querySelector('[data-testid="status-dot"]')).toBeInTheDocument();
+    });
+
+    it('renders pipeline mode when pipelineConfig is provided and width >= 640', () => {
+      const { container } = render(
+        <FlowProgress
+          mode="auto"
+          steps={mockSteps}
+          status="running"
+          pipelineConfig={{ showStageNumbers: true }}
+        />,
+      );
+
+      simulateResize(container, 700);
+
+      expect(container.querySelector('[data-testid="pipeline-mode"]')).toBeInTheDocument();
+    });
+
+    it('does not render pipeline when width < expanded threshold despite pipelineConfig', () => {
+      const { container } = render(
+        <FlowProgress
+          mode="auto"
+          steps={mockSteps}
+          status="running"
+          pipelineConfig={{ showStageNumbers: true }}
+        />,
+      );
+
+      simulateResize(container, 500);
+
+      expect(container.querySelector('[data-testid="pipeline-mode"]')).not.toBeInTheDocument();
+    });
+
+    it('prefers compact over vertical when parallelThreads exist and width is narrow', () => {
+      const { container } = render(
+        <FlowProgress
+          mode="auto"
+          steps={mockSteps}
+          status="running"
+          parallelThreads={[
+            {
+              id: 't1', label: 'Thread 1', status: 'running',
+              steps: [{ id: 't1s1', label: 'Step', status: 'active' }],
+            },
+          ]}
+        />,
+      );
+
+      simulateResize(container, 300);
+
+      // Should NOT be vertical (vertical can't render threads)
+      expect(container.querySelector('[data-testid="vertical-mode"]')).not.toBeInTheDocument();
+      // Should be compact mode
+      expect(container.querySelector('[data-testid="progress-counter"]')).toBeInTheDocument();
+    });
+
+    it('does not select pipeline when parallel threads exist despite pipelineConfig', () => {
+      const { container } = render(
+        <FlowProgress
+          mode="auto"
+          steps={mockSteps}
+          status="running"
+          pipelineConfig={{ showStageNumbers: true }}
+          parallelThreads={[
+            {
+              id: 't1', label: 'Thread 1', status: 'running',
+              steps: [{ id: 't1s1', label: 'Step', status: 'active' }],
+            },
+          ]}
+        />,
+      );
+
+      simulateResize(container, 700);
+
+      // Pipeline mode doesn't support threads, so expanded should be used
+      expect(container.querySelector('[data-testid="pipeline-mode"]')).not.toBeInTheDocument();
+      expect(container.querySelector('[data-testid="expanded-mode"]')).toBeInTheDocument();
+    });
+
+    it('supports autoModeConfig with custom breakpoints', () => {
+      const { container } = render(
+        <FlowProgress
+          mode="auto"
+          steps={mockSteps}
+          status="running"
+          autoModeConfig={{ breakpoints: { compact: 300, expanded: 500, full: 800 } }}
+        />,
+      );
+
+      // At 400px with compact=300 and expanded=500, should be compact mode
+      simulateResize(container, 400);
+      expect(container.querySelector('[data-testid="vertical-mode"]')).not.toBeInTheDocument();
+      expect(container.querySelector('[data-testid="expanded-mode"]')).not.toBeInTheDocument();
+      expect(container.querySelector('[data-testid="progress-counter"]')).toBeInTheDocument();
+    });
+
+    it('autoModeConfig.breakpoints.compact takes precedence over autoBreakpoint', () => {
+      const { container } = render(
+        <FlowProgress
+          mode="auto"
+          steps={mockSteps}
+          status="running"
+          autoBreakpoint={200}
+          autoModeConfig={{ breakpoints: { compact: 600 } }}
+        />,
+      );
+
+      // At 400px: autoBreakpoint=200 would say "above compact", but
+      // autoModeConfig.breakpoints.compact=600 takes precedence, so vertical
+      simulateResize(container, 400);
+      expect(container.querySelector('[data-testid="vertical-mode"]')).toBeInTheDocument();
     });
 
     it('renders step labels regardless of resolved mode', () => {

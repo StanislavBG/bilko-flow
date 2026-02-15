@@ -23,27 +23,31 @@
  *
  * STEP 2 — Pick the right component and mode:
  *
- *   FlowProgress — Choose mode based on available width:
+ *   FlowProgress — Choose mode (or use "auto" as the recommended default):
+ *     • "auto"      → (RECOMMENDED) Smart multi-breakpoint mode that adapts
+ *                     automatically to container width using a 4-tier system:
+ *                       < 480px → vertical | 480–639px → compact |
+ *                       640–899px → expanded | ≥ 900px → full
+ *                     Also auto-detects parallel threads (avoids vertical)
+ *                     and pipeline config (selects pipeline at ≥ 640px).
+ *                     Use `autoModeConfig` for custom breakpoint thresholds.
+ *                     This is the BEST choice when container size is unknown.
  *     • "vertical"  → Mobile screens (< 480px width) or any narrow container
  *                     where vertical space is abundant. Shows steps top-to-bottom
  *                     with a vertical connector rail and expandable ellipsis.
- *     • "compact"   → Tight spaces (sidebars, inline widgets, < 480px width).
- *                     Minimal footprint: dot chain + labels.
- *                     Parallel threads stack as minimal indented rows.
- *     • "expanded"  → Medium to wide containers (cards, panels, 480–900px).
+ *     • "compact"   → Sidebars (480–639px width). Minimal footprint: dot chain
+ *                     + labels. Parallel threads stack as minimal indented rows.
+ *     • "expanded"  → Medium to wide containers (640–899px).
  *                     Step cards with icons, labels, type info.
  *                     Parallel threads render as bordered lanes with step cards.
- *     • "full"      → Wide dedicated areas (> 900px). Large numbered circles,
+ *     • "full"      → Wide dedicated areas (≥ 900px). Large numbered circles,
  *                     phase labels, progress track, header with counter.
  *                     Parallel threads render as full lanes with numbered steps.
- *     • "pipeline"  → Deploy/CI-style progress (≥ 500px width). Large stage
+ *     • "pipeline"  → Deploy/CI-style progress (≥ 640px width). Large stage
  *                     circles on a continuous track with prominent labels.
  *                     Best for deployment, publish, and promotion workflows.
  *                     Configure via `pipelineConfig` prop (stage size, numbers,
  *                     duration display, track style).
- *     • "auto"      → When the container width is dynamic or unknown.
- *                     Set `autoBreakpoint` to the px threshold that best fits
- *                     the layout (default 480). Narrow → vertical, wide → expanded.
  *
  *   FlowCanvas — Use ONLY when you have a large 2D area (≥ 500×400px) and
  *     the user needs to explore a DAG structure interactively.
@@ -65,8 +69,9 @@
  *     narrow containers, use radius=1. For wide areas, radius=3 or 4.
  *   - `theme` (FlowProgress): Override colors to match the host app.
  *     Use `mergeTheme()` for partial overrides.
- *   - `autoBreakpoint` (FlowProgress mode="auto"): Adjust the px cutoff
- *     to match where your layout actually switches from tight to spacious.
+ *   - `autoModeConfig` (FlowProgress mode="auto"): Configure the 4-tier
+ *     breakpoint thresholds to match your layout's responsive behavior.
+ *     Overrides the legacy `autoBreakpoint` prop.
  *   - `stepRenderer` (FlowProgress): Provide a custom renderer when the
  *     default step visuals don't fit the host design system.
  *   - `parallelThreads` (FlowProgress): Pass ParallelThread[] for flows
@@ -255,6 +260,8 @@ export {
   resolveStepMeta,
   applyStatusMap,
   getStatusIcon,
+  resolveAutoMode,
+  DEFAULT_AUTO_BREAKPOINTS,
 } from './flow-progress-shared';
 export type { ResolvedStepMeta } from './flow-progress-shared';
 
@@ -281,4 +288,5 @@ export type {
   ParallelThread,
   ParallelConfig,
   PipelineConfig,
+  AutoModeConfig,
 } from './types';

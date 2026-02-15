@@ -49,13 +49,14 @@ import {
   MoreHorizontal,
   ChevronRight,
 } from 'lucide-react';
-import type { FlowProgressProps, FlowProgressStep, FlowProgressTheme, PipelineConfig } from './types';
+import type { FlowProgressProps, FlowProgressStep, FlowProgressTheme, PipelineConfig, AutoModeConfig } from './types';
 import { mergeTheme } from './step-type-config';
 import { ParallelThreadsSection } from './parallel-threads';
 import { FlowProgressVertical } from './flow-progress-vertical';
 import {
   DEFAULT_RADIUS,
   DEFAULT_AUTO_BREAKPOINT,
+  DEFAULT_AUTO_BREAKPOINTS,
   needsWindow,
   resolveStepBg,
   resolveStepTextColor,
@@ -69,6 +70,7 @@ import {
   resolveStepMeta,
   applyStatusMap,
   getStatusIcon,
+  resolveAutoMode,
 } from './flow-progress-shared';
 import type { WindowItem, ResolvedStepMeta } from './flow-progress-shared';
 
@@ -1048,21 +1050,25 @@ function PipelineMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
  *
  * This is the MAIN progress component. It supports:
  *
- * ## VISUAL MODES (choose based on container width)
+ * ## VISUAL MODES
+ * - "auto" (RECOMMENDED): Smart multi-breakpoint mode that adapts to
+ *   container width using a 4-tier system:
+ *     < 480px → vertical | 480–639px → compact | 640–899px → expanded | ≥ 900px → full
+ *   Also auto-detects parallel threads (avoids vertical) and pipeline
+ *   config (selects pipeline at sufficient width). Configure thresholds
+ *   via `autoModeConfig`. This is the recommended default for all use cases.
  * - "full": Large numbered circles, phase labels, wide connectors, header.
  *   Best for wide containers (> 900px).
  * - "compact": Small status icons with inline text labels, thin connectors.
- *   Best for narrow containers (< 480px, sidebars).
+ *   Best for narrow containers (480–639px, sidebars).
  * - "expanded": Rectangular step cards with icon, label, and type.
- *   Best for medium containers (480–900px).
+ *   Best for medium containers (640–899px).
  * - "vertical": Top-to-bottom timeline with vertical connector rail and
  *   expandable ellipsis. Best for mobile (< 480px) where vertical space
  *   is abundant.
  * - "pipeline": Clean deploy/CI-style horizontal progress with large stage
  *   indicators on a continuous track. Best for deployment, publish, and
- *   promotion workflows (≥ 500px). Configure via `pipelineConfig`.
- * - "auto": Dynamically selects "vertical" (narrow) or "expanded" (wide)
- *   based on container width. Use when container size is unknown.
+ *   promotion workflows (≥ 640px). Configure via `pipelineConfig`.
  *
  * ## LINEAR FLOW (sequential steps only)
  * Pass `steps` array. Steps render left-to-right with sliding window
@@ -1080,7 +1086,7 @@ function PipelineMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
  *
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * @example Linear flow
+ * @example Linear flow (auto mode — recommended)
  * ```tsx
  * <FlowProgress
  *   mode="auto"
@@ -1092,6 +1098,16 @@ function PipelineMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
  *   label="Content Pipeline"
  *   status="running"
  *   activity="Writing article draft..."
+ * />
+ * ```
+ *
+ * @example Auto mode with custom breakpoints
+ * ```tsx
+ * <FlowProgress
+ *   mode="auto"
+ *   steps={steps}
+ *   status="running"
+ *   autoModeConfig={{ breakpoints: { compact: 400, expanded: 600, full: 1000 } }}
  * />
  * ```
  *
@@ -1131,7 +1147,7 @@ function PipelineMode(props: FlowProgressProps & { resolvedTheme: FlowProgressTh
  * ```
  */
 export function FlowProgress(props: FlowProgressProps): React.JSX.Element {
-  const { mode, className, theme, autoBreakpoint, statusMap } = props;
+  const { mode, className, theme, autoBreakpoint, autoModeConfig, statusMap } = props;
 
   const resolvedTheme = useMemo(() => mergeTheme(theme), [theme]);
 
@@ -1165,9 +1181,51 @@ export function FlowProgress(props: FlowProgressProps): React.JSX.Element {
     [props, normalizedSteps],
   );
 
-  // --- Auto mode: measure container width with ResizeObserver ---
+  /*
+   * ═══════════════════════════════════════════════════════════════════════
+   * ENHANCED AUTO-MODE: MULTI-BREAKPOINT RESOLUTION
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The enhanced auto-mode uses a 4-tier breakpoint system to select the
+   * optimal rendering mode based on container width and flow context:
+   *
+   *   Container Width:  0 ──── 480px ──── 640px ──── 900px ──── ...
+   *                     │       │         │         │
+   *   Resolved Mode:  vertical compact  expanded   full
+   *
+   * Context-aware adjustments:
+   * - Parallel threads → vertical is skipped (it can't render threads)
+   * - Pipeline config → pipeline mode at sufficient width
+   *
+   * The resolution is handled by the pure `resolveAutoMode()` function
+   * in flow-progress-shared.ts, making it testable and reusable.
+   *
+   * BACKWARDS COMPATIBILITY:
+   * The legacy `autoBreakpoint` prop maps to `breakpoints.compact` in
+   * the new system. When `autoModeConfig.breakpoints.compact` is also
+   * set, it takes precedence over `autoBreakpoint`.
+   * ═══════════════════════════════════════════════════════════════════════
+   */
   const containerRef = useRef<HTMLDivElement>(null);
-  const [resolvedAutoMode, setResolvedAutoMode] = useState<'expanded' | 'compact'>('compact');
+  const [resolvedAutoMode, setResolvedAutoMode] = useState<
+    'vertical' | 'compact' | 'expanded' | 'full' | 'pipeline'
+  >('vertical');
+
+  /*
+   * Merge legacy autoBreakpoint with autoModeConfig breakpoints.
+   * autoModeConfig.breakpoints.compact takes precedence over autoBreakpoint.
+   */
+  const mergedBreakpoints = useMemo(() => {
+    const configBp = autoModeConfig?.breakpoints;
+    return {
+      compact: configBp?.compact ?? autoBreakpoint ?? DEFAULT_AUTO_BREAKPOINTS.compact,
+      expanded: configBp?.expanded ?? DEFAULT_AUTO_BREAKPOINTS.expanded,
+      full: configBp?.full ?? DEFAULT_AUTO_BREAKPOINTS.full,
+    };
+  }, [autoBreakpoint, autoModeConfig]);
+
+  const hasParallelThreads = !!(props.parallelThreads && props.parallelThreads.length > 0);
+  const hasPipelineConfig = !!props.pipelineConfig;
 
   useEffect(() => {
     if (mode !== 'auto') return;
@@ -1175,11 +1233,14 @@ export function FlowProgress(props: FlowProgressProps): React.JSX.Element {
     const el = containerRef.current;
     if (!el) return;
 
-    const breakpoint = autoBreakpoint ?? DEFAULT_AUTO_BREAKPOINT;
-
     const update = () => {
       const width = el.getBoundingClientRect().width;
-      setResolvedAutoMode(width >= breakpoint ? 'expanded' : 'compact');
+      const resolved = resolveAutoMode(width, {
+        hasParallelThreads,
+        hasPipelineConfig,
+        breakpoints: mergedBreakpoints,
+      });
+      setResolvedAutoMode(resolved);
     };
 
     // Initial measurement
@@ -1190,12 +1251,9 @@ export function FlowProgress(props: FlowProgressProps): React.JSX.Element {
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [mode, autoBreakpoint]);
+  }, [mode, mergedBreakpoints, hasParallelThreads, hasPipelineConfig]);
 
-  // Auto mode: narrow → vertical, wide → expanded
-  const effectiveMode = mode === 'auto'
-    ? (resolvedAutoMode === 'compact' ? 'vertical' : resolvedAutoMode)
-    : mode;
+  const effectiveMode = mode === 'auto' ? resolvedAutoMode : mode;
 
   return (
     <div ref={containerRef} className={`max-w-full overflow-hidden ${className ?? ''}`} data-testid={mode === 'auto' ? 'auto-mode-container' : undefined}>
