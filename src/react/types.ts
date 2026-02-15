@@ -91,13 +91,206 @@ export interface StepExecution {
   };
 }
 
-/** FlowProgress step descriptor */
+/**
+ * FlowProgress step descriptor.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * RESILIENCY NOTE — WHY `meta` AND `skipped` EXIST (v0.3.0)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * This interface was originally a rigid four-field type (id, label, status,
+ * type) with a fixed four-value status enum (pending/active/complete/error).
+ * A production consumer (NPR podcast pipeline) abandoned the library because:
+ *
+ *   1. There was NO per-step data channel. The only text output was the
+ *      flow-wide `activity` prop. Consumers showing per-step messages like
+ *      "Chunk 2/5 transcribed — 3.2 MB" had to either overwrite the single
+ *      `activity` string on every SSE event (losing context for other steps)
+ *      or build a fully custom progress component (abandoning the library).
+ *
+ *   2. There was NO 'skipped' status. Conditional pipelines that bypass
+ *      steps at runtime were forced to remove steps (losing positional
+ *      context), mark them 'complete' (misleading), or leave them 'pending'
+ *      (also misleading).
+ *
+ * The solution is a GENERIC extensibility mechanism:
+ *
+ *   - `meta: Record<string, unknown>` — An open-ended metadata bag that
+ *     agents can populate with ANYTHING: text messages, streaming chunk
+ *     progress, audio references, batch counters, drip-feed state,
+ *     binary payload URIs, custom JSON, etc. The library defines a set
+ *     of WELL-KNOWN KEYS (documented below) that the built-in renderers
+ *     know how to display, but agents are free to add ANY key they need.
+ *     Consumers reading `meta` can type-narrow at access time.
+ *
+ *   - `status: 'skipped'` — A fifth status value for conditionally
+ *     bypassed steps, rendered with distinct dimmed visual treatment.
+ *
+ * Both additions are **fully backwards-compatible**. Existing consumers
+ * that never set `meta` or use 'skipped' see zero visual/behavioral change.
+ *
+ * ## WELL-KNOWN META KEYS
+ *
+ * The built-in renderers check for these keys and display them
+ * automatically. All are optional — unknown keys are silently ignored
+ * by renderers but preserved in the data for consumer access.
+ *
+ * | Key               | Type     | Description                                    |
+ * | ----------------- | -------- | ---------------------------------------------- |
+ * | `message`         | string   | Per-step status text shown beneath the label.   |
+ * |                   |          | e.g. "Chunk 2/5 — 3.2 MB"                      |
+ * | `progress`        | number   | 0–1 fractional progress for the step.           |
+ * |                   |          | Rendered as a mini progress bar when present.   |
+ * | `mediaType`       | string   | MIME type of payload (e.g. "audio/mpeg").        |
+ * |                   |          | Informs consumers what kind of data to expect.  |
+ * | `mediaUri`        | string   | URI reference to streamed/produced content.     |
+ * | `bytesProcessed`  | number   | Running byte count for streaming/batch steps.   |
+ * | `bytesTotal`      | number   | Total expected bytes (enables % calculation).   |
+ * | `chunksProcessed` | number   | Running chunk count for chunked processing.     |
+ * | `chunksTotal`     | number   | Total expected chunks.                          |
+ * | `startedAt`       | number   | Unix ms timestamp when the step began.          |
+ * | `completedAt`     | number   | Unix ms timestamp when the step finished.       |
+ * | `durationMs`      | number   | Elapsed milliseconds for the step.              |
+ * | `error`           | string   | Error detail text (supplements status='error'). |
+ * | `skipReason`      | string   | Why the step was skipped (shown for 'skipped'). |
+ *
+ * ## CUSTOM / AGENT-DEFINED KEYS
+ *
+ * Agents SHOULD namespace custom keys to avoid collisions with future
+ * well-known keys. Convention: `x-<domain>-<key>`.
+ *
+ * ```ts
+ * meta: {
+ *   message: 'Processing audio...',
+ *   'x-npr-segment': { start: 0, end: 120, speaker: 'host' },
+ *   'x-batch-id': 'abc-123',
+ * }
+ * ```
+ *
+ * ## FOR AGENT / LLM AUTHORS
+ *
+ * - Set `meta.message` on any step to show granular per-step text.
+ *   This is the RIGHT place for per-step status — use the flow-wide
+ *   `activity` prop only for flow-level status.
+ * - Set `meta.progress` (0–1) for a visual progress indicator.
+ * - Use `status: 'skipped'` with `meta.skipReason` for bypassed steps.
+ * - For streaming data (audio, video, binary), set `meta.mediaType`
+ *   and `meta.mediaUri` so consumers know how to handle the payload.
+ * - For chunk/batch progress, set `meta.chunksProcessed` / `meta.chunksTotal`.
+ * - You can put ANY JSON-serializable data in `meta`. The renderers
+ *   only look at well-known keys; everything else is passed through
+ *   untouched for consumer access.
+ *
+ * @example Per-step text messages
+ * ```ts
+ * const steps: FlowProgressStep[] = [
+ *   { id: '1', label: 'Download', status: 'complete',
+ *     meta: { message: '14.2 MB in 3.1s', bytesProcessed: 14_200_000, durationMs: 3100 } },
+ *   { id: '2', label: 'Transcode', status: 'active',
+ *     meta: { message: 'Chunk 2/5 — 3.2 MB', chunksProcessed: 2, chunksTotal: 5, progress: 0.4 } },
+ *   { id: '3', label: 'Upload', status: 'pending' },
+ * ];
+ * ```
+ *
+ * @example Streaming audio with custom metadata
+ * ```ts
+ * const steps: FlowProgressStep[] = [
+ *   { id: '1', label: 'Stream Audio', status: 'active',
+ *     meta: {
+ *       message: 'Buffering...',
+ *       mediaType: 'audio/mpeg',
+ *       mediaUri: '/stream/abc-123',
+ *       'x-npr-segment': { start: 0, end: 120 },
+ *     } },
+ * ];
+ * ```
+ *
+ * @example Skipped step with reason
+ * ```ts
+ * const steps: FlowProgressStep[] = [
+ *   { id: '1', label: 'Download', status: 'complete' },
+ *   { id: '2', label: 'Transcode', status: 'skipped',
+ *     meta: { skipReason: 'Already in MP3 format' } },
+ *   { id: '3', label: 'Upload', status: 'active' },
+ * ];
+ * ```
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 export interface FlowProgressStep {
   id: string;
   label: string;
-  status: 'pending' | 'active' | 'complete' | 'error';
+  /**
+   * Step execution status.
+   *
+   * - 'pending'  — Not yet started. Renders as a dim placeholder circle/card.
+   * - 'active'   — Currently executing. Renders with animation/pulse effect.
+   * - 'complete' — Successfully finished. Renders with a green check icon.
+   * - 'error'    — Failed. Renders with a red error icon.
+   * - 'skipped'  — Conditionally bypassed at runtime. Renders with a
+   *                distinct dimmed + strikethrough treatment and a skip
+   *                indicator icon (SkipForward) so the user can see the
+   *                step existed in the pipeline but was intentionally not
+   *                executed. Use `meta.skipReason` to explain why.
+   *
+   *                Added in v0.3.0 to support conditional pipelines
+   *                without removing steps from the array (which loses
+   *                positional context and breaks DAG visualization) or
+   *                misleadingly marking them as 'complete' or 'pending'.
+   */
+  status: 'pending' | 'active' | 'complete' | 'error' | 'skipped';
   /** Optional step type key for theme-aware coloring */
   type?: string;
+  /**
+   * Generic, open-ended metadata bag for per-step data of ANY kind.
+   *
+   * ═══════════════════════════════════════════════════════════════════════
+   * THIS IS THE GENERIC EXTENSIBILITY MECHANISM THAT REPLACES THE NEED
+   * FOR ADDING NARROW-PURPOSE FIELDS TO THIS INTERFACE.
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Instead of adding a `message` field, a `progress` field, an `audio`
+   * field, etc. (which creates interface bloat and forces library releases
+   * for every new use case), `meta` is a single Record<string, unknown>
+   * that agents can populate with whatever they need:
+   *
+   *   - Text status messages   → meta.message
+   *   - Streaming progress     → meta.progress, meta.chunksProcessed
+   *   - Audio/video references → meta.mediaType, meta.mediaUri
+   *   - Batch counters         → meta.bytesProcessed, meta.bytesTotal
+   *   - Timing data            → meta.startedAt, meta.durationMs
+   *   - Custom agent data      → meta['x-myagent-whatever']
+   *
+   * The built-in renderers know how to display well-known keys (see the
+   * WELL-KNOWN META KEYS table in the interface JSDoc above). Unknown
+   * keys are silently ignored by renderers but preserved in the object
+   * for consumer access — agents reading step data can access any key
+   * they put in.
+   *
+   * ## TYPE NARROWING AT ACCESS TIME
+   *
+   * Since `meta` values are `unknown`, consumers should type-narrow:
+   * ```ts
+   * const msg = typeof step.meta?.message === 'string' ? step.meta.message : undefined;
+   * const progress = typeof step.meta?.progress === 'number' ? step.meta.progress : undefined;
+   * ```
+   *
+   * ## WHY Record<string, unknown> INSTEAD OF A TYPED INTERFACE
+   *
+   * 1. No library release needed when agents invent new meta keys.
+   * 2. No import required — agents just set plain JSON.
+   * 3. No version coupling — consumers on older bilko-flow versions
+   *    can still receive and forward meta keys they don't understand.
+   * 4. The well-known keys provide structure WHERE IT MATTERS (rendering)
+   *    without constraining the rest of the payload.
+   *
+   * If you need type safety for your custom keys, create a domain-
+   * specific type in YOUR code and cast:
+   * ```ts
+   * interface MyStepMeta { message: string; 'x-npr-segment': { start: number; end: number } }
+   * const myMeta = step.meta as MyStepMeta;
+   * ```
+   */
+  meta?: Record<string, unknown>;
 }
 
 /**
@@ -262,6 +455,18 @@ export interface ParallelConfig {
  *
  * Allows per-step-type colors and overrides for status colors.
  * All color values are Tailwind CSS classes (e.g. 'bg-purple-500').
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * v0.3.0 ADDITION: `skippedColor` and `skippedTextColor`
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * These were added alongside the 'skipped' status on FlowProgressStep.
+ * They default to gray-500/gray-400 respectively if not provided, giving
+ * skipped steps a visually distinct "dimmed" appearance that communicates
+ * "this step exists but was intentionally not executed."
+ *
+ * Existing consumers that don't set these values get sensible defaults.
+ * ═══════════════════════════════════════════════════════════════════════════
  */
 export interface FlowProgressTheme {
   /** Map step type keys to Tailwind bg color classes */
@@ -274,6 +479,13 @@ export interface FlowProgressTheme {
   errorColor: string;
   /** Color for pending step (Tailwind bg class) */
   pendingColor: string;
+  /**
+   * Color for skipped step (Tailwind bg class).
+   * Defaults to 'bg-gray-500' if not provided. Skipped steps are
+   * intentionally dimmer than completed steps to visually convey
+   * "this was bypassed, not finished."
+   */
+  skippedColor: string;
   /** Text color for active step labels (Tailwind text class) */
   activeTextColor: string;
   /** Text color for completed step labels (Tailwind text class) */
@@ -282,6 +494,12 @@ export interface FlowProgressTheme {
   errorTextColor: string;
   /** Text color for pending step labels (Tailwind text class) */
   pendingTextColor: string;
+  /**
+   * Text color for skipped step labels (Tailwind text class).
+   * Defaults to 'text-gray-400'. Uses strikethrough styling
+   * in addition to the color to reinforce the "skipped" semantics.
+   */
+  skippedTextColor: string;
 }
 
 /**
@@ -435,6 +653,76 @@ export interface FlowProgressProps {
   className?: string;
   /** Theme customization for step type-aware coloring */
   theme?: Partial<FlowProgressTheme>;
+  /**
+   * Custom status vocabulary mapping.
+   *
+   * ═══════════════════════════════════════════════════════════════════════
+   * RESILIENCY ENHANCEMENT — CUSTOM STATUS MAPPING (v0.3.0)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Many consumers use their own status vocabularies that don't match
+   * bilko-flow's built-in statuses (pending/active/complete/error/skipped).
+   * For example, a CI/CD system might use 'queued', 'building', 'deployed',
+   * 'cancelled', 'timed_out'. Without statusMap, consumers are forced to
+   * write an adapter layer that manually translates every status string
+   * before passing steps to FlowProgress — boilerplate that discourages
+   * adoption.
+   *
+   * `statusMap` is a Record<string, FlowProgressStep['status']> that maps
+   * ANY custom status string to one of bilko-flow's built-in visual
+   * treatments. The mapping happens inside FlowProgress BEFORE rendering,
+   * so consumers can pass steps with their native status vocabulary and
+   * the component handles the translation transparently.
+   *
+   * ## HOW IT WORKS
+   *
+   * When FlowProgress encounters a step whose `status` is NOT one of the
+   * five built-in values, it looks up `statusMap[step.status]`:
+   *   - If found → uses the mapped built-in status for visual treatment.
+   *   - If NOT found → falls back to 'pending' (safe default).
+   *
+   * The ORIGINAL status string is preserved on the step object — only
+   * the visual treatment is affected. Consumers reading step data still
+   * see their original status values.
+   *
+   * ## FOR AGENT / LLM AUTHORS
+   *
+   * Pass statusMap when your step data uses non-standard status values:
+   *
+   * @example CI/CD status mapping
+   * ```tsx
+   * <FlowProgress
+   *   mode="pipeline"
+   *   steps={ciSteps} // steps have status: 'queued' | 'building' | 'deployed' | 'cancelled'
+   *   statusMap={{
+   *     queued: 'pending',
+   *     building: 'active',
+   *     deployed: 'complete',
+   *     cancelled: 'skipped',
+   *     timed_out: 'error',
+   *   }}
+   *   status="running"
+   * />
+   * ```
+   *
+   * @example SSE event status mapping
+   * ```tsx
+   * <FlowProgress
+   *   mode="expanded"
+   *   steps={sseSteps} // steps from server use 'in_progress', 'done', 'failed'
+   *   statusMap={{
+   *     in_progress: 'active',
+   *     done: 'complete',
+   *     failed: 'error',
+   *     not_started: 'pending',
+   *     bypassed: 'skipped',
+   *   }}
+   *   status="running"
+   * />
+   * ```
+   * ═══════════════════════════════════════════════════════════════════════
+   */
+  statusMap?: Record<string, FlowProgressStep['status']>;
   /** Custom step renderer for External Integration Pattern */
   stepRenderer?: FlowProgressStepRenderer;
   /** Sliding window radius (default: 2) */

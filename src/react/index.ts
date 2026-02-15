@@ -220,6 +220,44 @@ export type {
   UseFlowExecutionReturn,
 } from './use-flow-execution';
 
+// ═══════════════════════════════════════════════════════════════════════
+// SSE STREAM HOOK (v0.3.0)
+// ═══════════════════════════════════════════════════════════════════════
+//
+// This hook is the DIRECT response to the NPR feedback that the library
+// "couldn't natively consume SSE streams." It abstracts the boilerplate
+// of opening an EventSource, parsing events, mapping them to step state,
+// handling reconnection, and cleaning up on unmount.
+//
+// Generic over the SSE event payload type T — consumers define their
+// event shape and provide a mapEvent function. No coupling between
+// bilko-flow and the server's event format.
+//
+// See use-flow-sse.ts for comprehensive documentation and examples.
+// ═══════════════════════════════════════════════════════════════════════
+export { useFlowSSE } from './use-flow-sse';
+export type {
+  UseFlowSSEOptions,
+  UseFlowSSEReturn,
+  SSEConnectionState,
+  SSEStepUpdate,
+} from './use-flow-sse';
+
+// ═══════════════════════════════════════════════════════════════════════
+// SHARED UTILITIES (v0.3.0 — newly exported)
+// ═══════════════════════════════════════════════════════════════════════
+//
+// resolveStepMeta and applyStatusMap were previously internal-only.
+// Exporting them allows consumers to use the same meta-extraction
+// and status-mapping logic in their own code without reimplementing it.
+// ═══════════════════════════════════════════════════════════════════════
+export {
+  resolveStepMeta,
+  applyStatusMap,
+  getStatusIcon,
+} from './flow-progress-shared';
+export type { ResolvedStepMeta } from './flow-progress-shared';
+
 // Types
 export type {
   UIStepType,
