@@ -7,10 +7,8 @@
  */
 
 import { Router } from 'express';
-import { TenantScope } from '../domain/account';
 import { apiError, validationError, notFoundError } from '../domain/errors';
 import { Store } from '../storage/store';
-import { AuditService } from '../audit/audit-service';
 import { WorkflowExecutor, ExecutorError } from '../engine/executor';
 import { AuthenticatedRequest } from './middleware';
 
@@ -32,7 +30,6 @@ function redactSecrets(
 
 export function createRunRoutes(
   store: Store,
-  auditService: AuditService,
   executor: WorkflowExecutor,
 ): Router {
   const router = Router();
@@ -43,11 +40,6 @@ export function createRunRoutes(
    */
   router.post('/workflows/:workflowId/runs', async (req: AuthenticatedRequest, res) => {
     try {
-      if (!req.scope) {
-        res.status(400).json(apiError(validationError('Tenant scope headers required')));
-        return;
-      }
-
       const { workflowVersion, inputs, secretOverrides } = req.body;
 
       // Redact secret keys from stored inputs to prevent leaking in run data
@@ -56,27 +48,14 @@ export function createRunRoutes(
       // Create the run (secretOverrides are NOT persisted — only passed to executor)
       const run = await executor.createRun({
         workflowId: req.params.workflowId,
-        accountId: req.scope.accountId,
-        projectId: req.scope.projectId,
-        environmentId: req.scope.environmentId,
-        workflowVersion,
-        inputs: safeInputs,
-      });
-
-      // Audit
-      if (req.identity) {
-        await auditService.record({
+        ...(req.scope ? {
           accountId: req.scope.accountId,
           projectId: req.scope.projectId,
           environmentId: req.scope.environmentId,
-          actorId: req.identity.identityId,
-          action: 'run.created',
-          resourceType: 'run',
-          resourceId: run.id,
-          outcome: 'success',
-          details: { workflowId: req.params.workflowId, workflowVersion: run.workflowVersion },
-        });
-      }
+        } : {}),
+        workflowVersion,
+        inputs: safeInputs,
+      });
 
       // Execute asynchronously (non-blocking)
       executor.executeRun(run.id, req.scope, secretOverrides).catch(() => {
@@ -106,34 +85,40 @@ export function createRunRoutes(
    * Get run status, step statuses, determinism grade, provenance summary.
    */
   router.get('/runs/:runId', async (req: AuthenticatedRequest, res) => {
-    if (!req.scope) {
-      res.status(400).json(apiError(validationError('Tenant scope headers required')));
-      return;
-    }
+    try {
+      const run = await store.runs.getById(req.params.runId, req.scope);
+      if (!run) {
+        res.status(404).json(apiError(notFoundError('Run', req.params.runId)));
+        return;
+      }
 
-    const run = await store.runs.getById(req.params.runId, req.scope);
-    if (!run) {
-      res.status(404).json(apiError(notFoundError('Run', req.params.runId)));
-      return;
-    }
+      // Fetch provenance summary if available
+      let provenance = null;
+      if (run.provenanceId) {
+        provenance = await store.provenance.getByRunId(run.id, req.scope);
+      }
 
-    // Fetch provenance summary if available
-    let provenance = null;
-    if (run.provenanceId) {
-      provenance = await store.provenance.getByRunId(run.id, req.scope);
+      res.json({
+        run,
+        provenance: provenance
+          ? {
+              id: provenance.id,
+              determinismGrade: provenance.determinismGrade,
+              workflowHash: provenance.workflowHash,
+              compiledPlanHash: provenance.compiledPlanHash,
+            }
+          : null,
+      });
+    } catch (err) {
+      res.status(500).json(
+        apiError({
+          code: 'SYSTEM.INTERNAL',
+          message: err instanceof Error ? err.message : 'Failed to fetch run',
+          retryable: false,
+          suggestedFixes: [],
+        }),
+      );
     }
-
-    res.json({
-      run,
-      provenance: provenance
-        ? {
-            id: provenance.id,
-            determinismGrade: provenance.determinismGrade,
-            workflowHash: provenance.workflowHash,
-            compiledPlanHash: provenance.compiledPlanHash,
-          }
-        : null,
-    });
   });
 
   /**
@@ -142,30 +127,10 @@ export function createRunRoutes(
    */
   router.post('/runs/:runId/cancel', async (req: AuthenticatedRequest, res) => {
     try {
-      if (!req.scope) {
-        res.status(400).json(apiError(validationError('Tenant scope headers required')));
-        return;
-      }
-
       const { reason } = req.body;
       const canceledBy = req.identity?.identityId ?? 'unknown';
 
       const run = await executor.cancelRun(req.params.runId, req.scope, canceledBy, reason);
-
-      // Audit
-      if (req.identity) {
-        await auditService.record({
-          accountId: req.scope.accountId,
-          projectId: req.scope.projectId,
-          environmentId: req.scope.environmentId,
-          actorId: req.identity.identityId,
-          action: 'run.canceled',
-          resourceType: 'run',
-          resourceId: run.id,
-          outcome: 'success',
-          details: { reason },
-        });
-      }
 
       res.json({ run });
     } catch (err) {

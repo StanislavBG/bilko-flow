@@ -251,6 +251,18 @@ function validateStep(step: Step, validStepIds: Set<string>, errors: TypedError[
     );
   }
 
+  // dependsOn must be an array
+  if (step.dependsOn !== undefined && !Array.isArray(step.dependsOn)) {
+    errors.push(
+      createTypedError({
+        code: 'VALIDATION.INVALID_DEPENDS_ON',
+        message: `Step "${step.id}": dependsOn must be an array`,
+        stepId: step.id,
+        retryable: false,
+      }),
+    );
+  }
+
   // Dependencies reference valid steps
   if (Array.isArray(step.dependsOn)) {
     for (const dep of step.dependsOn) {
@@ -293,7 +305,16 @@ function validateStep(step: Step, validStepIds: Set<string>, errors: TypedError[
     }
 
     if (step.policy.timeoutMs !== undefined) {
-      if (step.policy.timeoutMs < SCHEMA_CONSTRAINTS.minTimeoutMs) {
+      if (!Number.isFinite(step.policy.timeoutMs)) {
+        errors.push(
+          createTypedError({
+            code: 'VALIDATION.INVALID_TIMEOUT',
+            message: `Step "${step.id}": timeoutMs must be a finite number`,
+            stepId: step.id,
+            retryable: false,
+          }),
+        );
+      } else if (step.policy.timeoutMs < SCHEMA_CONSTRAINTS.minTimeoutMs) {
         errors.push(
           createTypedError({
             code: 'VALIDATION.TIMEOUT_TOO_LOW',
@@ -302,8 +323,7 @@ function validateStep(step: Step, validStepIds: Set<string>, errors: TypedError[
             retryable: false,
           }),
         );
-      }
-      if (step.policy.timeoutMs > SCHEMA_CONSTRAINTS.maxTimeoutMs) {
+      } else if (step.policy.timeoutMs > SCHEMA_CONSTRAINTS.maxTimeoutMs) {
         errors.push(
           createTypedError({
             code: 'VALIDATION.TIMEOUT_TOO_HIGH',
@@ -316,7 +336,16 @@ function validateStep(step: Step, validStepIds: Set<string>, errors: TypedError[
     }
 
     if (step.policy.maxAttempts !== undefined) {
-      if (step.policy.maxAttempts < SCHEMA_CONSTRAINTS.minAttempts) {
+      if (!Number.isFinite(step.policy.maxAttempts) || !Number.isInteger(step.policy.maxAttempts)) {
+        errors.push(
+          createTypedError({
+            code: 'VALIDATION.INVALID_ATTEMPTS',
+            message: `Step "${step.id}": maxAttempts must be a finite integer`,
+            stepId: step.id,
+            retryable: false,
+          }),
+        );
+      } else if (step.policy.maxAttempts < SCHEMA_CONSTRAINTS.minAttempts) {
         errors.push(
           createTypedError({
             code: 'VALIDATION.MIN_ATTEMPTS',
@@ -325,8 +354,7 @@ function validateStep(step: Step, validStepIds: Set<string>, errors: TypedError[
             retryable: false,
           }),
         );
-      }
-      if (step.policy.maxAttempts > SCHEMA_CONSTRAINTS.maxAttempts) {
+      } else if (step.policy.maxAttempts > SCHEMA_CONSTRAINTS.maxAttempts) {
         errors.push(
           createTypedError({
             code: 'VALIDATION.MAX_ATTEMPTS_EXCEEDED',
@@ -384,7 +412,7 @@ function validateStepGraph(workflow: Workflow, errors: TypedError[]): void {
 
   // Check reachability: entry step should have no dependencies (it's the start)
   const entryStep = stepMap.get(workflow.entryStepId);
-  if (entryStep && entryStep.dependsOn.length > 0) {
+  if (entryStep && Array.isArray(entryStep.dependsOn) && entryStep.dependsOn.length > 0) {
     errors.push(
       createTypedError({
         code: 'VALIDATION.ENTRY_HAS_DEPENDENCIES',
@@ -399,6 +427,47 @@ function validateStepGraph(workflow: Workflow, errors: TypedError[]): void {
         ],
       }),
     );
+  }
+
+  // Check forward reachability: all steps must be reachable from entry.
+  // Build a forward adjacency map (step → steps that depend on it) and BFS from entry.
+  const forwardEdges = new Map<string, string[]>();
+  for (const step of workflow.steps) {
+    if (!forwardEdges.has(step.id)) forwardEdges.set(step.id, []);
+    if (Array.isArray(step.dependsOn)) {
+      for (const dep of step.dependsOn) {
+        const edges = forwardEdges.get(dep);
+        if (edges) edges.push(step.id);
+        else forwardEdges.set(dep, [step.id]);
+      }
+    }
+  }
+
+  const reachable = new Set<string>();
+  const queue = [workflow.entryStepId];
+  while (queue.length > 0) {
+    const current = queue.pop()!;
+    if (reachable.has(current)) continue;
+    reachable.add(current);
+    for (const next of (forwardEdges.get(current) ?? [])) {
+      if (!reachable.has(next)) queue.push(next);
+    }
+  }
+
+  for (const step of workflow.steps) {
+    if (!reachable.has(step.id)) {
+      errors.push(
+        createTypedError({
+          code: 'VALIDATION.UNREACHABLE_STEP',
+          message: `Step "${step.id}" is not reachable from entry step "${workflow.entryStepId}"`,
+          stepId: step.id,
+          retryable: false,
+          suggestedFixes: [
+            { type: 'ADD_DEPENDENCY', params: { stepId: step.id }, description: 'Connect this step to the workflow graph via dependsOn' },
+          ],
+        }),
+      );
+    }
   }
 }
 

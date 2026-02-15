@@ -97,10 +97,10 @@ export class DataPlanePublisher {
     };
   }
 
-  /** Query events by run. */
+  /** Query events by run. Scope is optional (library mode skips tenant filtering). */
   async getEventsByRun(
     runId: string,
-    scope: { accountId: string; projectId: string; environmentId: string },
+    scope?: { accountId: string; projectId: string; environmentId: string },
   ): Promise<DataPlaneEvent[]> {
     return this.store.events.listByRun(runId, scope);
   }
@@ -114,8 +114,9 @@ export class DataPlanePublisher {
   }
 
   private matchesSubscription(event: DataPlaneEvent, sub: EventSubscription): boolean {
-    if (event.accountId !== sub.accountId) return false;
-    if (event.projectId !== sub.projectId) return false;
+    // Tenant scoping: if subscriber specifies account/project, event must match
+    if (sub.accountId && event.accountId !== sub.accountId) return false;
+    if (sub.projectId && event.projectId !== sub.projectId) return false;
     if (sub.environmentId && event.environmentId !== sub.environmentId) return false;
     if (sub.eventTypes?.length && !sub.eventTypes.includes(event.type)) return false;
     return true;

@@ -90,6 +90,7 @@ export function createOllamaAdapter() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(120_000),
       });
     } catch (err) {
       throw new LLMProviderError(
@@ -106,7 +107,21 @@ export function createOllamaAdapter() {
       );
     }
 
-    const data: OllamaChatResponse = await res.json();
+    /**
+     * Wrap res.json() in try-catch: if Ollama returns non-JSON (e.g., HTML
+     * error page or empty body), we get a clear LLMProviderError instead
+     * of an unhandled JSON.parse crash propagating to the caller.
+     */
+    let data: OllamaChatResponse;
+    try {
+      data = await res.json();
+    } catch {
+      const text = await res.text().catch(() => '(empty body)');
+      throw new LLMProviderError(
+        `Ollama returned non-JSON response (HTTP ${res.status}): ${text.slice(0, 200)}`,
+        res.status,
+      );
+    }
 
     return {
       content: data.message?.content ?? '',

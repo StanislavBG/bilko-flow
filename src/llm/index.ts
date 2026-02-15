@@ -7,7 +7,7 @@
  * with a clear error.
  */
 
-import { createTypedError, TypedError } from '../domain/errors';
+import { createTypedError, TypedError, maskSecretsInMessage } from '../domain/errors';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -92,12 +92,24 @@ export class LLMParseError extends Error {
     this.name = 'LLMParseError';
     this.rawResponse = rawResponse;
     this.attempts = attempts;
+    /**
+     * ═══════════════════════════════════════════════════════════════════
+     * rawResponsePreview is TRUNCATED to 200 chars (v0.3.0 — RESILIENCY)
+     * ═══════════════════════════════════════════════════════════════════
+     *
+     * The audit identified that raw LLM responses included in TypedError
+     * details could leak API keys, tokens, or sensitive content when the
+     * error propagates to API responses, webhook payloads, or event
+     * streams. Truncating to 200 chars limits exposure while still
+     * providing enough context for debugging.
+     * ═══════════════════════════════════════════════════════════════════
+     */
     this.typedError = createTypedError({
       code: 'PLANNER.LLM_PARSE',
       message,
       retryable: false,
       details: {
-        rawResponsePreview: rawResponse.slice(0, 500),
+        rawResponsePreview: rawResponse.slice(0, 200),
         attempts,
       },
       suggestedFixes: [
@@ -227,17 +239,37 @@ export async function chatJSON<T>(options: ChatOptions): Promise<T> {
   const adapter = getAdapter(options.provider);
   const useJsonMode = supportsJsonMode(options.provider);
 
-  const response = await adapter({
-    provider: options.provider,
-    model: options.model,
-    messages: options.messages,
-    systemPrompt: options.systemPrompt,
-    apiKey: options.apiKey,
-    baseUrl: options.baseUrl,
-    maxTokens: options.maxTokens,
-    temperature: options.temperature,
-    responseFormat: useJsonMode ? { type: 'json_object' } : undefined,
-  });
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   * SECRET MASKING IN LLM ERRORS (v0.3.0 — RESILIENCY ENHANCEMENT)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The architectural audit identified that LLM provider errors could
+   * include the API key in error messages (e.g., when the key appears
+   * in a URL or the provider echoes it back). We wrap the adapter call
+   * to sanitize any error messages before they propagate.
+   * ═══════════════════════════════════════════════════════════════════════
+   */
+  const secretsToMask = [options.apiKey];
+  let response;
+  try {
+    response = await adapter({
+      provider: options.provider,
+      model: options.model,
+      messages: options.messages,
+      systemPrompt: options.systemPrompt,
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+      maxTokens: options.maxTokens,
+      temperature: options.temperature,
+      responseFormat: useJsonMode ? { type: 'json_object' } : undefined,
+    });
+  } catch (err) {
+    if (err instanceof Error) {
+      err.message = maskSecretsInMessage(err.message, secretsToMask);
+    }
+    throw err;
+  }
 
   const parsed = cleanLLMResponse(response.content);
   return parsed as T;

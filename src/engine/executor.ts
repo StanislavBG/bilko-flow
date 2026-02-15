@@ -20,6 +20,7 @@ import { Store } from '../storage/store';
 import { transitionRunStatus, transitionStepStatus, isTerminalStepStatus } from './state-machine';
 import { executeStep, StepExecutionContext } from './step-runner';
 import { DataPlanePublisher } from '../data-plane/publisher';
+import { DataPlaneEvent, DataPlaneEventType } from '../domain/events';
 
 /** Executor configuration. */
 export interface ExecutorConfig {
@@ -35,6 +36,8 @@ const DEFAULT_CONFIG: ExecutorConfig = {
 export class WorkflowExecutor {
   private config: ExecutorConfig;
   private canceledRuns = new Set<string>();
+  /** Guard against concurrent executeRun calls on the same run. */
+  private runningRuns = new Set<string>();
 
   constructor(
     private store: Store,
@@ -44,13 +47,20 @@ export class WorkflowExecutor {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
+  /**
+   * Derive a TenantScope from an object's optional tenant fields.
+   * Returns undefined when tenant fields are absent (library mode).
+   */
+  private static deriveScope(obj: { accountId?: string; projectId?: string; environmentId?: string }): TenantScope | undefined {
+    if (obj.accountId && obj.projectId && obj.environmentId) {
+      return { accountId: obj.accountId, projectId: obj.projectId, environmentId: obj.environmentId };
+    }
+    return undefined;
+  }
+
   /** Create and start a new run. */
   async createRun(input: CreateRunInput): Promise<Run> {
-    const scope: TenantScope = {
-      accountId: input.accountId,
-      projectId: input.projectId,
-      environmentId: input.environmentId,
-    };
+    const scope = WorkflowExecutor.deriveScope(input);
 
     // Fetch workflow
     const workflow = await this.store.workflows.getById(input.workflowId, scope);
@@ -115,13 +125,35 @@ export class WorkflowExecutor {
     }
 
     await this.store.runs.create(run);
-    await this.publisher.publishRunEvent(run, 'run.created');
+    await this.safePublishRunEvent(run, 'run.created');
 
     return run;
   }
 
-  /** Execute a run (moves through queued -> running -> terminal). */
-  async executeRun(runId: string, scope: TenantScope, secretValues?: Record<string, string>): Promise<Run> {
+  /**
+   * Execute a run (moves through queued -> running -> terminal).
+   * Scope is optional — when omitted, derived from the run's tenant fields
+   * (or skipped entirely in library mode).
+   */
+  async executeRun(runId: string, scope?: TenantScope, secretValues?: Record<string, string>): Promise<Run> {
+    // Prevent concurrent execution of the same run
+    if (this.runningRuns.has(runId)) {
+      throw new ExecutorError(createTypedError({
+        code: 'WORKFLOW.ALREADY_RUNNING',
+        message: `Run "${runId}" is already being executed`,
+        retryable: false,
+      }));
+    }
+    this.runningRuns.add(runId);
+
+    try {
+      return await this.executeRunInternal(runId, scope, secretValues);
+    } finally {
+      this.runningRuns.delete(runId);
+    }
+  }
+
+  private async executeRunInternal(runId: string, scope?: TenantScope, secretValues?: Record<string, string>): Promise<Run> {
     let run = await this.store.runs.getById(runId, scope);
     if (!run) {
       throw new ExecutorError(notFoundError('Run', runId));
@@ -129,13 +161,14 @@ export class WorkflowExecutor {
 
     // Transition to queued
     run = await this.transitionRun(run, RunStatus.Queued);
-    await this.publisher.publishRunEvent(run, 'run.queued');
+    await this.safePublishRunEvent(run, 'run.queued');
 
-    // Fetch and compile workflow
+    // Fetch and compile workflow — derive scope from run if not provided
+    const effectiveScope = scope ?? WorkflowExecutor.deriveScope(run);
     const workflow = await this.store.workflows.getByIdAndVersion(
       run.workflowId,
       run.workflowVersion,
-      scope,
+      effectiveScope,
     );
     if (!workflow) {
       throw new ExecutorError(notFoundError('Workflow', run.workflowId));
@@ -155,7 +188,7 @@ export class WorkflowExecutor {
     run = await this.transitionRun(run, RunStatus.Running);
     run.startedAt = new Date().toISOString();
     await this.store.runs.update(run.id, run);
-    await this.publisher.publishRunEvent(run, 'run.started');
+    await this.safePublishRunEvent(run, 'run.started');
 
     // Execute steps in topological order
     const transcript: TranscriptEntry[] = [];
@@ -196,7 +229,7 @@ export class WorkflowExecutor {
         attempts: 0,
       };
       await this.store.runs.update(run.id, run);
-      await this.publisher.publishStepEvent(run, stepId, 'step.started');
+      await this.safePublishStepEvent(run, stepId, 'step.started');
 
       transcript.push({
         stepId,
@@ -208,7 +241,24 @@ export class WorkflowExecutor {
         ],
       });
 
-      // Execute the step
+      /**
+       * Execute the step.
+       *
+       * ═══════════════════════════════════════════════════════════════════
+       * CANCELLATION SIGNAL FIX (v0.3.0 — RESILIENCY ENHANCEMENT)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * The `canceled` field was previously set to a snapshot boolean
+       * at context creation time. This meant that if cancelRun() was
+       * called AFTER the context was created but BEFORE the step
+       * finished, the step handler would not see the cancellation.
+       *
+       * Now we use a getter that checks the canceledRuns Set at read
+       * time, so step handlers always see the latest cancellation state.
+       * ═══════════════════════════════════════════════════════════════════
+       */
+      const canceledRuns = this.canceledRuns;
+      const capturedRunId = runId;
       const context: StepExecutionContext = {
         runId: run.id,
         accountId: run.accountId,
@@ -216,7 +266,7 @@ export class WorkflowExecutor {
         environmentId: run.environmentId,
         secrets: secretValues ?? {},
         upstreamOutputs: stepOutputs,
-        canceled: this.canceledRuns.has(runId),
+        get canceled() { return canceledRuns.has(capturedRunId); },
       };
 
       const result = await executeStep(compiledStep, context);
@@ -234,7 +284,7 @@ export class WorkflowExecutor {
           durationMs: result.durationMs,
           outputHash: result.outputs ? computeHash(JSON.stringify(result.outputs)) : undefined,
         });
-        await this.publisher.publishStepEvent(run, stepId, 'step.succeeded');
+        await this.safePublishStepEvent(run, stepId, 'step.succeeded');
       } else if (result.status === StepRunStatus.Failed) {
         transcript.push({
           stepId,
@@ -242,7 +292,7 @@ export class WorkflowExecutor {
           action: 'failed',
           durationMs: result.durationMs,
         });
-        await this.publisher.publishStepEvent(run, stepId, 'step.failed');
+        await this.safePublishStepEvent(run, stepId, 'step.failed');
 
         // Fail the run
         run = await this.failRun(run, result.error ?? createTypedError({
@@ -268,7 +318,8 @@ export class WorkflowExecutor {
     run.completedAt = new Date().toISOString();
     run.determinismGrade = compilation.plan.determinismAnalysis.achievableGrade;
     await this.store.runs.update(run.id, run);
-    await this.publisher.publishRunEvent(run, 'run.succeeded');
+    await this.safePublishRunEvent(run, 'run.succeeded');
+    this.canceledRuns.delete(run.id);
 
     // Generate provenance
     await this.generateProvenance(run, workflow, compilation.plan, transcript);
@@ -281,8 +332,11 @@ export class WorkflowExecutor {
     return run;
   }
 
-  /** Cancel a run. */
-  async cancelRun(runId: string, scope: TenantScope, canceledBy: string, reason?: string): Promise<Run> {
+  /**
+   * Cancel a run.
+   * Scope is optional — when omitted, lookup is by ID only (library mode).
+   */
+  async cancelRun(runId: string, scope: TenantScope | undefined, canceledBy: string, reason?: string): Promise<Run> {
     const run = await this.store.runs.getById(runId, scope);
     if (!run) {
       throw new ExecutorError(notFoundError('Run', runId));
@@ -303,7 +357,7 @@ export class WorkflowExecutor {
   /** Test a workflow without a full production run. */
   async testWorkflow(
     workflow: Workflow,
-    scope: TenantScope,
+    scope?: TenantScope,
   ): Promise<{ valid: boolean; compilation: { success: boolean; errors: TypedError[] }; determinism?: any }> {
     const compilation = compileWorkflow(workflow);
     return {
@@ -314,6 +368,42 @@ export class WorkflowExecutor {
       },
       determinism: compilation.plan?.determinismAnalysis,
     };
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   * SAFE PUBLISHER CALLS (v0.3.0 — RESILIENCY ENHANCEMENT)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The audit identified that publisher errors (e.g., event store write
+   * failure, subscriber callback exception) would bubble up and crash
+   * the entire run. Event publishing is observational — it must not
+   * affect the outcome of the run itself. These helpers wrap publisher
+   * calls with try-catch to ensure publishing failures are swallowed.
+   * ═══════════════════════════════════════════════════════════════════════
+   */
+  private async safePublishRunEvent(run: Run, eventType: DataPlaneEventType): Promise<void> {
+    try {
+      await this.publisher.publishRunEvent(run, eventType);
+    } catch {
+      // Publishing is observational — swallow errors to avoid crashing the run.
+    }
+  }
+
+  private async safePublishStepEvent(run: Run, stepId: string, eventType: DataPlaneEventType): Promise<void> {
+    try {
+      await this.publisher.publishStepEvent(run, stepId, eventType);
+    } catch {
+      // Publishing is observational — swallow errors to avoid crashing the run.
+    }
+  }
+
+  private async safePublishEvent(event: DataPlaneEvent): Promise<void> {
+    try {
+      await this.publisher.publishEvent(event);
+    } catch {
+      // Publishing is observational — swallow errors to avoid crashing the run.
+    }
   }
 
   private async transitionRun(run: Run, target: RunStatus): Promise<Run> {
@@ -327,16 +417,26 @@ export class WorkflowExecutor {
     return run;
   }
 
+  /**
+   * Transition a run to Failed state. Cleans up the canceledRuns Set
+   * to prevent memory leaks when a run queued for cancellation fails
+   * due to a step error before the cancellation propagates.
+   */
   private async failRun(run: Run, error: TypedError): Promise<Run> {
     run.status = RunStatus.Failed;
     run.error = error;
     run.completedAt = new Date().toISOString();
     run.updatedAt = new Date().toISOString();
     await this.store.runs.update(run.id, run);
-    await this.publisher.publishRunEvent(run, 'run.failed');
+    await this.safePublishRunEvent(run, 'run.failed');
+    this.canceledRuns.delete(run.id);
     return run;
   }
 
+  /**
+   * Internal cancellation with try-finally to guarantee canceledRuns
+   * cleanup even if the store update throws.
+   */
   private async cancelRunInternal(run: Run): Promise<Run> {
     run.status = RunStatus.Canceled;
     run.canceledAt = new Date().toISOString();
@@ -354,9 +454,12 @@ export class WorkflowExecutor {
       }
     }
 
-    await this.store.runs.update(run.id, run);
-    await this.publisher.publishRunEvent(run, 'run.canceled');
-    this.canceledRuns.delete(run.id);
+    try {
+      await this.store.runs.update(run.id, run);
+      await this.safePublishRunEvent(run, 'run.canceled');
+    } finally {
+      this.canceledRuns.delete(run.id);
+    }
     return run;
   }
 
@@ -366,11 +469,7 @@ export class WorkflowExecutor {
     plan: CompiledPlan,
     transcript: TranscriptEntry[],
   ): Promise<void> {
-    const scope: TenantScope = {
-      accountId: run.accountId,
-      projectId: run.projectId,
-      environmentId: run.environmentId,
-    };
+    const scope = WorkflowExecutor.deriveScope(run);
 
     const inputHashes: Record<string, HashRecord> = {};
     for (const [stepId, result] of Object.entries(run.stepResults)) {
@@ -384,9 +483,7 @@ export class WorkflowExecutor {
       runId: run.id,
       workflowId: run.workflowId,
       workflowVersion: run.workflowVersion,
-      accountId: run.accountId,
-      projectId: run.projectId,
-      environmentId: run.environmentId,
+      ...(scope ? scope : {}),
       createdAt: new Date().toISOString(),
       determinismGrade: run.determinismGrade ?? DeterminismGrade.BestEffort,
       workflowHash: plan.workflowHash,
@@ -405,23 +502,19 @@ export class WorkflowExecutor {
     await this.store.provenance.create(provenance);
     run.provenanceId = provenance.id;
     await this.store.runs.update(run.id, run);
-    await this.publisher.publishEvent({
+    await this.safePublishEvent({
       id: `evt_${uuid()}`,
       type: 'provenance.recorded',
       schemaVersion: '1.0.0',
       timestamp: new Date().toISOString(),
-      ...scope,
+      ...(scope ? scope : {}),
       runId: run.id,
       payload: { provenanceId: provenance.id },
     });
   }
 
   private async generateAttestation(run: Run, plan: CompiledPlan): Promise<void> {
-    const scope: TenantScope = {
-      accountId: run.accountId,
-      projectId: run.projectId,
-      environmentId: run.environmentId,
-    };
+    const scope = WorkflowExecutor.deriveScope(run);
 
     const artifactHashes: Record<string, HashRecord> = {};
     const stepImageDigests: Record<string, string> = {};
@@ -446,13 +539,13 @@ export class WorkflowExecutor {
 
     // HMAC-sign the statement for integrity verification
     const statementJson = JSON.stringify(statement, Object.keys(statement).sort());
-    const signingKey = process.env.BILKO_ATTESTATION_KEY ?? `bilko-dev-key-${scope.accountId}`;
+    const signingKey = process.env.BILKO_ATTESTATION_KEY ?? `bilko-dev-key-${scope?.accountId ?? 'default'}`;
     const signature = createHmac('sha256', signingKey).update(statementJson).digest('hex');
 
     const attestation: Attestation = {
       id: `att_${uuid()}`,
       runId: run.id,
-      ...scope,
+      ...(scope ? scope : {}),
       status: AttestationStatus.Issued,
       subject: {
         runId: run.id,
@@ -463,7 +556,7 @@ export class WorkflowExecutor {
       statement,
       signature,
       signatureAlgorithm: 'hmac-sha256',
-      verificationKeyId: process.env.BILKO_ATTESTATION_KEY ? 'env:BILKO_ATTESTATION_KEY' : `dev:${scope.accountId}`,
+      verificationKeyId: process.env.BILKO_ATTESTATION_KEY ? 'env:BILKO_ATTESTATION_KEY' : `dev:${scope?.accountId ?? 'default'}`,
       issuedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
     };
@@ -471,12 +564,12 @@ export class WorkflowExecutor {
     await this.store.attestations.create(attestation);
     run.attestationId = attestation.id;
     await this.store.runs.update(run.id, run);
-    await this.publisher.publishEvent({
+    await this.safePublishEvent({
       id: `evt_${uuid()}`,
       type: 'attestation.issued',
       schemaVersion: '1.0.0',
       timestamp: new Date().toISOString(),
-      ...scope,
+      ...(scope ? scope : {}),
       runId: run.id,
       attestationId: attestation.id,
       payload: { attestationId: attestation.id },

@@ -70,9 +70,10 @@ export interface Run {
   workflowId: string;
   /** The workflow version this run executes. */
   workflowVersion: number;
-  accountId: string;
-  projectId: string;
-  environmentId: string;
+  /** Tenant scoping — optional for library (standalone) usage. */
+  accountId?: string;
+  projectId?: string;
+  environmentId?: string;
   status: RunStatus;
   /** Determinism grade achieved for this run. */
   determinismGrade?: DeterminismGrade;
@@ -99,9 +100,10 @@ export interface Run {
 /** Input for creating a new run. */
 export interface CreateRunInput {
   workflowId: string;
-  accountId: string;
-  projectId: string;
-  environmentId: string;
+  /** Tenant scoping — optional for library (standalone) usage. */
+  accountId?: string;
+  projectId?: string;
+  environmentId?: string;
   /** Optional: pin to a specific workflow version. */
   workflowVersion?: number;
   /** Run-level input overrides. */

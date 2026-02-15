@@ -17,21 +17,30 @@ export function createArtifactRoutes(store: Store): Router {
    * List artifacts produced by a run.
    */
   router.get('/runs/:runId/artifacts', async (req: AuthenticatedRequest, res) => {
-    if (!req.scope) {
-      res.status(400).json(apiError(validationError('Tenant scope headers required')));
-      return;
+    try {
+      if (!req.scope) {
+        res.status(400).json(apiError(validationError('Tenant scope headers required')));
+        return;
+      }
+
+      // Verify run exists
+      const run = await store.runs.getById(req.params.runId, req.scope);
+      if (!run) {
+        res.status(404).json(apiError(notFoundError('Run', req.params.runId)));
+        return;
+      }
+
+      const artifacts = await store.artifacts.listByRun(req.params.runId, req.scope);
+
+      res.json({ artifacts });
+    } catch (err) {
+      res.status(500).json(apiError({
+        code: 'SYSTEM.INTERNAL',
+        message: err instanceof Error ? err.message : 'Failed to fetch artifacts',
+        retryable: false,
+        suggestedFixes: [],
+      }));
     }
-
-    // Verify run exists
-    const run = await store.runs.getById(req.params.runId, req.scope);
-    if (!run) {
-      res.status(404).json(apiError(notFoundError('Run', req.params.runId)));
-      return;
-    }
-
-    const artifacts = await store.artifacts.listByRun(req.params.runId, req.scope);
-
-    res.json({ artifacts });
   });
 
   return router;

@@ -527,6 +527,17 @@ export function useFlowSSE<T>(options: UseFlowSSEOptions<T>): UseFlowSSEReturn<T
     if (!mountedRef.current) return;
 
     closeConnection();
+
+    /**
+     * SSR SAFETY: EventSource is a browser-only API. During server-side
+     * rendering (Next.js, Remix, etc.) `window` and `EventSource` are
+     * undefined. Guard against this to prevent crashes. (v0.3.0)
+     */
+    if (typeof EventSource === 'undefined') {
+      setConnectionState('disconnected');
+      return;
+    }
+
     setConnectionState('connecting');
 
     const es = new EventSource(url, { withCredentials });

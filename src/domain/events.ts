@@ -29,10 +29,10 @@ export interface DataPlaneEvent {
   /** Event schema version for forward compatibility. */
   schemaVersion: string;
   timestamp: string;
-  /** Tenant scoping. */
-  accountId: string;
-  projectId: string;
-  environmentId: string;
+  /** Tenant scoping — optional for library (standalone) usage. */
+  accountId?: string;
+  projectId?: string;
+  environmentId?: string;
   /** Associated resource IDs. */
   runId?: string;
   stepId?: string;

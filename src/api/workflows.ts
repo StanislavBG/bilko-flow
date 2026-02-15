@@ -10,10 +10,8 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { Workflow, WorkflowStatus, CreateWorkflowInput, Step } from '../domain/workflow';
-import { TenantScope } from '../domain/account';
 import { apiError, validationError, notFoundError } from '../domain/errors';
 import { Store } from '../storage/store';
-import { AuditService } from '../audit/audit-service';
 import { WorkflowExecutor } from '../engine/executor';
 import { compileWorkflow } from '../dsl/compiler';
 import { CURRENT_DSL_VERSION } from '../dsl/version';
@@ -21,7 +19,6 @@ import { AuthenticatedRequest } from './middleware';
 
 export function createWorkflowRoutes(
   store: Store,
-  auditService: AuditService,
   executor: WorkflowExecutor,
 ): Router {
   const router = Router();
@@ -34,9 +31,9 @@ export function createWorkflowRoutes(
     try {
       const body = req.body as CreateWorkflowInput;
 
-      if (!body.name || !body.accountId || !body.projectId || !body.environmentId) {
+      if (!body.name) {
         res.status(400).json(
-          apiError(validationError('name, accountId, projectId, and environmentId are required')),
+          apiError(validationError('name is required')),
         );
         return;
       }
@@ -60,9 +57,9 @@ export function createWorkflowRoutes(
 
       const workflow: Workflow = {
         id: workflowId,
-        accountId: body.accountId,
-        projectId: body.projectId,
-        environmentId: body.environmentId,
+        ...(body.accountId ? { accountId: body.accountId } : {}),
+        ...(body.projectId ? { projectId: body.projectId } : {}),
+        ...(body.environmentId ? { environmentId: body.environmentId } : {}),
         name: body.name,
         description: body.description,
         version: 1,
@@ -95,20 +92,6 @@ export function createWorkflowRoutes(
       // Persist
       await store.workflows.create(workflow);
 
-      // Audit
-      if (req.identity) {
-        await auditService.record({
-          accountId: body.accountId,
-          projectId: body.projectId,
-          environmentId: body.environmentId,
-          actorId: req.identity.identityId,
-          action: 'workflow.created',
-          resourceType: 'workflow',
-          resourceId: workflowId,
-          outcome: 'success',
-        });
-      }
-
       res.status(201).json({
         workflow,
         compilation: {
@@ -133,18 +116,22 @@ export function createWorkflowRoutes(
    * Fetch workflow definition and version metadata.
    */
   router.get('/:workflowId', async (req: AuthenticatedRequest, res) => {
-    if (!req.scope) {
-      res.status(400).json(apiError(validationError('Tenant scope headers required (x-account-id, x-project-id, x-environment-id)')));
-      return;
-    }
+    try {
+      const workflow = await store.workflows.getById(req.params.workflowId, req.scope);
+      if (!workflow) {
+        res.status(404).json(apiError(notFoundError('Workflow', req.params.workflowId)));
+        return;
+      }
 
-    const workflow = await store.workflows.getById(req.params.workflowId, req.scope);
-    if (!workflow) {
-      res.status(404).json(apiError(notFoundError('Workflow', req.params.workflowId)));
-      return;
+      res.json({ workflow });
+    } catch (err) {
+      res.status(500).json(apiError({
+        code: 'SYSTEM.INTERNAL',
+        message: err instanceof Error ? err.message : 'Failed to fetch workflow',
+        retryable: false,
+        suggestedFixes: [],
+      }));
     }
-
-    res.json({ workflow });
   });
 
   /**
@@ -153,11 +140,6 @@ export function createWorkflowRoutes(
    */
   router.put('/:workflowId', async (req: AuthenticatedRequest, res) => {
     try {
-      if (!req.scope) {
-        res.status(400).json(apiError(validationError('Tenant scope headers required')));
-        return;
-      }
-
       const existing = await store.workflows.getById(req.params.workflowId, req.scope);
       if (!existing) {
         res.status(404).json(apiError(notFoundError('Workflow', req.params.workflowId)));
@@ -200,21 +182,6 @@ export function createWorkflowRoutes(
 
       await store.workflows.update(existing.id, updated);
 
-      // Audit
-      if (req.identity) {
-        await auditService.record({
-          accountId: req.scope.accountId,
-          projectId: req.scope.projectId,
-          environmentId: req.scope.environmentId,
-          actorId: req.identity.identityId,
-          action: 'workflow.updated',
-          resourceType: 'workflow',
-          resourceId: existing.id,
-          outcome: 'success',
-          details: { previousVersion: existing.version, newVersion: updated.version },
-        });
-      }
-
       res.json({
         workflow: updated,
         compilation: {
@@ -240,11 +207,6 @@ export function createWorkflowRoutes(
    */
   router.post('/:workflowId/test', async (req: AuthenticatedRequest, res) => {
     try {
-      if (!req.scope) {
-        res.status(400).json(apiError(validationError('Tenant scope headers required')));
-        return;
-      }
-
       const workflow = await store.workflows.getById(req.params.workflowId, req.scope);
       if (!workflow) {
         res.status(404).json(apiError(notFoundError('Workflow', req.params.workflowId)));

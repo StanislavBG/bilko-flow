@@ -95,6 +95,7 @@ export function createLocalAIAdapter() {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(120_000),
       });
     } catch (err) {
       throw new LLMProviderError(
@@ -111,7 +112,16 @@ export function createLocalAIAdapter() {
       );
     }
 
-    const data: LocalAIChatResponse = await res.json();
+    let data: LocalAIChatResponse;
+    try {
+      data = await res.json();
+    } catch {
+      const text = await res.text().catch(() => '(empty body)');
+      throw new LLMProviderError(
+        `LocalAI returned non-JSON response (HTTP ${res.status}): ${text.slice(0, 200)}`,
+        res.status,
+      );
+    }
     const choice = data.choices?.[0];
 
     return {

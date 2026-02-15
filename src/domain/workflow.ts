@@ -44,9 +44,10 @@ export type WebhookEventType =
 /** The core Workflow DSL document. */
 export interface Workflow {
   id: string;
-  accountId: string;
-  projectId: string;
-  environmentId: string;
+  /** Tenant scoping — optional for library (standalone) usage. */
+  accountId?: string;
+  projectId?: string;
+  environmentId?: string;
   name: string;
   description?: string;
   /** Monotonically increasing version number. */
@@ -128,9 +129,10 @@ export interface Step {
 
 /** Input for creating a new workflow. */
 export interface CreateWorkflowInput {
-  accountId: string;
-  projectId: string;
-  environmentId: string;
+  /** Tenant scoping — optional for library (standalone) usage. */
+  accountId?: string;
+  projectId?: string;
+  environmentId?: string;
   name: string;
   description?: string;
   specVersion?: string;

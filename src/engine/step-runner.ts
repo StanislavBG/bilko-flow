@@ -12,9 +12,10 @@ import { CompiledStep } from '../dsl/compiler';
 /** Step execution context provided by the engine. */
 export interface StepExecutionContext {
   runId: string;
-  accountId: string;
-  projectId: string;
-  environmentId: string;
+  /** Tenant scoping — optional for library (standalone) usage. */
+  accountId?: string;
+  projectId?: string;
+  environmentId?: string;
   /** Resolved secret values available to the step. */
   secrets: Record<string, string>;
   /** Outputs from upstream steps. */
@@ -73,6 +74,14 @@ export function registerStepHandler(handler: StepHandler): void {
 /** Get a registered handler by type. Returns undefined if not registered. */
 export function getStepHandler(type: string): StepHandler | undefined {
   return stepHandlers.get(type);
+}
+
+/**
+ * Clear all registered step handlers. Intended for test isolation —
+ * call in afterEach() to prevent handler leakage between test suites.
+ */
+export function clearStepHandlers(): void {
+  stepHandlers.clear();
 }
 
 /** Get all registered step handlers. */
@@ -191,22 +200,36 @@ export async function executeStep(
   };
 }
 
-/** Execute a function with a timeout. */
+/** Execute a function with a timeout. Uses try-finally to guarantee timer cleanup. */
 async function executeWithTimeout<T>(
   fn: () => Promise<T>,
   timeoutMs: number,
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new TimeoutError(timeoutMs)), timeoutMs);
-    fn()
-      .then((result) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        reject(new TimeoutError(timeoutMs));
+      }
+    }, timeoutMs);
+
+    fn().then(
+      (result) => {
         clearTimeout(timer);
-        resolve(result);
-      })
-      .catch((err) => {
+        if (!settled) {
+          settled = true;
+          resolve(result);
+        }
+      },
+      (err) => {
         clearTimeout(timer);
-        reject(err);
-      });
+        if (!settled) {
+          settled = true;
+          reject(err);
+        }
+      },
+    );
   });
 }
 
@@ -234,14 +257,41 @@ export class NonRetryableStepError extends Error {
   }
 }
 
-/** Compute backoff delay based on strategy. */
+/**
+ * Compute backoff delay based on strategy, with jitter and a cap.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * WHY JITTER AND CAP WERE ADDED (v0.3.0 — RESILIENCY ENHANCEMENT)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The architectural audit identified two issues with the original backoff:
+ *
+ * 1. **No jitter** — When multiple concurrent runs retry against the same
+ *    external API, pure exponential backoff causes "thundering herd":
+ *    all retries fire at exactly the same time (1s, 2s, 4s, ...).
+ *    Adding ±25% random jitter decorrelates retry timing.
+ *
+ * 2. **No cap** — With maxAttempts=10 and baseMs=1000, exponential backoff
+ *    reaches 512 seconds (8.5 minutes) on the last retry. A 30-second cap
+ *    prevents excessively long waits while still providing meaningful backoff.
+ *
+ * The jitter uses a uniform distribution of ±25% of the computed delay.
+ * The cap of 30 seconds is applied before jitter to ensure the maximum
+ * possible delay is 30s * 1.25 = 37.5 seconds.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+const MAX_BACKOFF_MS = 30_000;
+
 function computeBackoff(
   strategy: 'fixed' | 'exponential',
   baseMs: number,
   attempt: number,
 ): number {
-  if (strategy === 'fixed') return baseMs;
-  return baseMs * Math.pow(2, attempt - 1);
+  const base = strategy === 'fixed' ? baseMs : baseMs * Math.pow(2, attempt - 1);
+  const capped = Math.min(base, MAX_BACKOFF_MS);
+  // Add ±25% jitter to decorrelate concurrent retries
+  const jitter = capped * 0.25 * (2 * Math.random() - 1);
+  return Math.max(0, Math.round(capped + jitter));
 }
 
 function sleep(ms: number): Promise<void> {

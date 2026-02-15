@@ -1,8 +1,9 @@
 /**
  * Storage layer interfaces.
  *
- * Defines the contract for data persistence, enabling
- * pluggable backends while enforcing tenant scoping.
+ * Defines the contract for data persistence with pluggable backends.
+ * Tenant scoping is optional — when omitted, stores operate without
+ * multi-tenant isolation (library/standalone mode).
  */
 
 import { Account, Project, Environment, TenantScope } from '../domain/account';
@@ -51,41 +52,60 @@ export interface EnvironmentStore {
   listByProject(accountId: string, projectId: string, options?: ListOptions): Promise<Environment[]>;
 }
 
-/** Store interface for workflows. */
+/**
+ * Store interface for workflows.
+ * Scope is optional — when omitted, lookup is by ID only (no tenant filtering).
+ */
 export interface WorkflowStore {
   create(workflow: Workflow): Promise<Workflow>;
-  getById(id: string, scope: TenantScope): Promise<Workflow | null>;
-  getByIdAndVersion(id: string, version: number, scope: TenantScope): Promise<Workflow | null>;
+  getById(id: string, scope?: TenantScope): Promise<Workflow | null>;
+  getByIdAndVersion(id: string, version: number, scope?: TenantScope): Promise<Workflow | null>;
   update(id: string, workflow: Workflow): Promise<Workflow | null>;
   listByScope(scope: TenantScope, options?: ListOptions): Promise<Workflow[]>;
+  /** Delete a workflow and all its versioned copies. */
+  delete(id: string): Promise<boolean>;
 }
 
-/** Store interface for runs. */
+/**
+ * Store interface for runs.
+ * Scope is optional — when omitted, lookup is by ID only (no tenant filtering).
+ */
 export interface RunStore {
   create(run: Run): Promise<Run>;
-  getById(id: string, scope: TenantScope): Promise<Run | null>;
+  getById(id: string, scope?: TenantScope): Promise<Run | null>;
   update(id: string, run: Partial<Run>): Promise<Run | null>;
   listByWorkflow(workflowId: string, scope: TenantScope, options?: ListOptions): Promise<Run[]>;
   listByScope(scope: TenantScope, options?: ListOptions): Promise<Run[]>;
+  /** Delete a run by ID. */
+  delete(id: string): Promise<boolean>;
 }
 
-/** Store interface for artifacts. */
+/**
+ * Store interface for artifacts.
+ * Scope is optional — when omitted, lookup is by ID only (no tenant filtering).
+ */
 export interface ArtifactStore {
   create(artifact: Artifact): Promise<Artifact>;
-  getById(id: string, scope: TenantScope): Promise<Artifact | null>;
-  listByRun(runId: string, scope: TenantScope, options?: ListOptions): Promise<Artifact[]>;
+  getById(id: string, scope?: TenantScope): Promise<Artifact | null>;
+  listByRun(runId: string, scope?: TenantScope, options?: ListOptions): Promise<Artifact[]>;
 }
 
-/** Store interface for provenance records. */
+/**
+ * Store interface for provenance records.
+ * Scope is optional — when omitted, lookup is by runId only (no tenant filtering).
+ */
 export interface ProvenanceStore {
   create(provenance: Provenance): Promise<Provenance>;
-  getByRunId(runId: string, scope: TenantScope): Promise<Provenance | null>;
+  getByRunId(runId: string, scope?: TenantScope): Promise<Provenance | null>;
 }
 
-/** Store interface for attestations. */
+/**
+ * Store interface for attestations.
+ * Scope is optional — when omitted, lookup is by runId only (no tenant filtering).
+ */
 export interface AttestationStore {
   create(attestation: Attestation): Promise<Attestation>;
-  getByRunId(runId: string, scope: TenantScope): Promise<Attestation | null>;
+  getByRunId(runId: string, scope?: TenantScope): Promise<Attestation | null>;
 }
 
 /** Store interface for role bindings. */
@@ -105,10 +125,13 @@ export interface AuditStore {
   ): Promise<AuditRecord[]>;
 }
 
-/** Store interface for data plane events. */
+/**
+ * Store interface for data plane events.
+ * Scope is optional — when omitted, lookup is by runId only (no tenant filtering).
+ */
 export interface EventStore {
   create(event: DataPlaneEvent): Promise<DataPlaneEvent>;
-  listByRun(runId: string, scope: TenantScope, options?: ListOptions): Promise<DataPlaneEvent[]>;
+  listByRun(runId: string, scope?: TenantScope, options?: ListOptions): Promise<DataPlaneEvent[]>;
   listByScope(scope: TenantScope, options?: ListOptions & { eventTypes?: string[] }): Promise<DataPlaneEvent[]>;
 }
 

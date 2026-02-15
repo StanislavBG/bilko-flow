@@ -45,9 +45,6 @@ export const VALID_EVIDENCE_CAPTURE = ['full-response', 'response-hash', 'none']
 /** Required fields for a workflow DSL document. */
 export const REQUIRED_WORKFLOW_FIELDS = [
   'name',
-  'accountId',
-  'projectId',
-  'environmentId',
   'determinism',
   'entryStepId',
   'steps',

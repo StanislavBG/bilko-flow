@@ -87,9 +87,15 @@ function EllipsisDropdown({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  // Close on outside click
+  /**
+   * Close on outside click.
+   *
+   * SSR SAFETY: typeof document guard prevents crashes during server-side
+   * rendering where document is undefined. (v0.3.0 resiliency fix)
+   */
   useEffect(() => {
     if (!open) return;
+    if (typeof document === 'undefined') return;
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
         setOpen(false);
