@@ -51,6 +51,136 @@ export interface DAGLayout {
 }
 
 /**
+ * Place a column's nodes centered around the average y-center of their parents.
+ * Maintains ROW_GAP spacing between siblings and clamps above PADDING.
+ */
+function placeColumnCenteredOnParents(
+  nodesInCol: string[],
+  col: number,
+  stepMap: Map<string, FlowStep>,
+  nodes: Map<string, NodeLayout>,
+): void {
+  // Compute desired y-center for each node based on parent positions
+  const desiredY = new Map<string, number>();
+  for (const nodeId of nodesInCol) {
+    const step = stepMap.get(nodeId)!;
+    const parentCenters: number[] = [];
+    for (const dep of step.dependsOn) {
+      const parentNode = nodes.get(dep);
+      if (parentNode) {
+        parentCenters.push(parentNode.y + parentNode.height / 2);
+      }
+    }
+    if (parentCenters.length > 0) {
+      desiredY.set(nodeId, parentCenters.reduce((a, b) => a + b, 0) / parentCenters.length);
+    } else {
+      desiredY.set(nodeId, PADDING + NODE_H / 2);
+    }
+  }
+
+  // Center the column block around the average desired y
+  const allDesired = nodesInCol.map(id => desiredY.get(id) ?? PADDING + NODE_H / 2);
+  const groupCenter = allDesired.reduce((a, b) => a + b, 0) / allDesired.length;
+  const blockHeight = nodesInCol.length * NODE_H + Math.max(0, nodesInCol.length - 1) * ROW_GAP;
+  const startY = Math.max(PADDING, groupCenter - blockHeight / 2);
+
+  for (let row = 0; row < nodesInCol.length; row++) {
+    const id = nodesInCol[row];
+    nodes.set(id, {
+      id,
+      x: PADDING + col * (NODE_W + COL_GAP),
+      y: startY + row * (NODE_H + ROW_GAP),
+      width: NODE_W,
+      height: NODE_H,
+      column: col,
+      row,
+    });
+  }
+}
+
+/**
+ * Shift a column's nodes so each parent is centered on its children.
+ * Resolves overlaps by pushing nodes apart while maintaining order.
+ */
+function shiftColumnTowardChildren(
+  nodesInCol: string[],
+  col: number,
+  adjacency: Map<string, string[]>,
+  columnOf: Map<string, number>,
+  nodes: Map<string, NodeLayout>,
+): void {
+  if (nodesInCol.length === 0) return;
+
+  // Compute ideal y for each node: center of its children in the next column
+  const idealY = new Map<string, number>();
+  for (const nodeId of nodesInCol) {
+    const children = (adjacency.get(nodeId) ?? []).filter(
+      childId => (columnOf.get(childId) ?? -1) === col + 1,
+    );
+    if (children.length > 0) {
+      const childCenters = children
+        .map(cid => nodes.get(cid))
+        .filter((n): n is NodeLayout => n != null)
+        .map(n => n.y + n.height / 2);
+      if (childCenters.length > 0) {
+        const avg = childCenters.reduce((a, b) => a + b, 0) / childCenters.length;
+        idealY.set(nodeId, avg - NODE_H / 2);
+      }
+    }
+  }
+
+  // If no node has children in the next column, nothing to shift
+  if (idealY.size === 0) return;
+
+  // Build desired positions: use ideal if available, else keep current
+  const desired: number[] = nodesInCol.map(id => idealY.get(id) ?? nodes.get(id)!.y);
+
+  // Resolve overlaps: ensure minimum spacing while staying close to desired
+  const resolved = resolveOverlaps(desired);
+
+  // Apply resolved positions
+  for (let i = 0; i < nodesInCol.length; i++) {
+    const node = nodes.get(nodesInCol[i])!;
+    nodes.set(nodesInCol[i], { ...node, y: resolved[i] });
+  }
+}
+
+/**
+ * Given desired y-positions (in order), resolve overlaps so nodes
+ * maintain at least ROW_GAP spacing while staying as close to
+ * desired positions as possible. Clamps above PADDING.
+ */
+function resolveOverlaps(desired: number[]): number[] {
+  const n = desired.length;
+  if (n === 0) return [];
+
+  const result = [...desired];
+  const minSpacing = NODE_H + ROW_GAP;
+
+  // Forward sweep: push down any overlapping nodes
+  result[0] = Math.max(PADDING, result[0]);
+  for (let i = 1; i < n; i++) {
+    result[i] = Math.max(result[i], result[i - 1] + minSpacing);
+  }
+
+  // Backward sweep: pull up if possible (stay close to desired)
+  for (let i = n - 2; i >= 0; i--) {
+    const maxAllowed = result[i + 1] - minSpacing;
+    if (result[i] > maxAllowed) {
+      result[i] = maxAllowed;
+    }
+  }
+
+  // Final clamp
+  result[0] = Math.max(PADDING, result[0]);
+  for (let i = 1; i < n; i++) {
+    result[i] = Math.max(result[i], result[i - 1] + minSpacing);
+  }
+
+  return result;
+}
+
+/**
  * Compute a DAG layout for the given steps.
  *
  * Uses Kahn's algorithm for topological ordering (column assignment)
@@ -153,26 +283,53 @@ export function computeLayout(steps: FlowStep[]): DAGLayout {
     columns.set(col, nodesInCol);
   }
 
-  // Phase 4: Compute coordinates
+  // Phase 4: Compute coordinates — parent-centered positioning
+  //
+  // Two-pass approach for tree-like alignment:
+  //   Forward pass (left→right): position children centered on parents.
+  //   Backward pass (right→left): shift parents to center on children.
+  // This eliminates the zig-zag pattern where connected nodes are at
+  // very different cross-axis positions.
   let maxLaneCount = 0;
   const nodes = new Map<string, NodeLayout>();
 
-  for (let col = 0; col <= maxColumn; col++) {
+  // Forward pass: initial placement
+  // Column 0: place sequentially from top
+  const col0Nodes = columns.get(0) ?? [];
+  maxLaneCount = Math.max(maxLaneCount, col0Nodes.length);
+  for (let row = 0; row < col0Nodes.length; row++) {
+    const id = col0Nodes[row];
+    nodes.set(id, {
+      id,
+      x: PADDING,
+      y: PADDING + row * (NODE_H + ROW_GAP),
+      width: NODE_W,
+      height: NODE_H,
+      column: 0,
+      row,
+    });
+  }
+
+  // Columns 1+: center children around their parents' y-positions
+  for (let col = 1; col <= maxColumn; col++) {
     const nodesInCol = columns.get(col) ?? [];
     maxLaneCount = Math.max(maxLaneCount, nodesInCol.length);
+    placeColumnCenteredOnParents(nodesInCol, col, stepMap, nodes);
+  }
 
-    for (let row = 0; row < nodesInCol.length; row++) {
-      const id = nodesInCol[row];
-      nodes.set(id, {
-        id,
-        x: PADDING + col * (NODE_W + COL_GAP),
-        y: PADDING + row * (NODE_H + ROW_GAP),
-        width: NODE_W,
-        height: NODE_H,
-        column: col,
-        row,
-      });
-    }
+  // Backward pass: shift parents to center on their children.
+  // Then re-center children on (now shifted) parents.
+  // This handles cases where children couldn't center on parents
+  // (e.g., PADDING clamp) — instead, parents move to match.
+  for (let col = maxColumn - 1; col >= 0; col--) {
+    const nodesInCol = columns.get(col) ?? [];
+    shiftColumnTowardChildren(nodesInCol, col, adjacency, columnOf, nodes);
+  }
+
+  // Second forward pass: re-center children on shifted parents
+  for (let col = 1; col <= maxColumn; col++) {
+    const nodesInCol = columns.get(col) ?? [];
+    placeColumnCenteredOnParents(nodesInCol, col, stepMap, nodes);
   }
 
   // Phase 5: Compute edges
@@ -197,9 +354,13 @@ export function computeLayout(steps: FlowStep[]): DAGLayout {
     }
   }
 
-  // Compute total dimensions
+  // Compute total dimensions from actual node positions
   const width = PADDING * 2 + (maxColumn + 1) * NODE_W + maxColumn * COL_GAP;
-  const height = PADDING * 2 + maxLaneCount * NODE_H + Math.max(0, maxLaneCount - 1) * ROW_GAP;
+  let maxNodeBottom = 0;
+  for (const node of nodes.values()) {
+    maxNodeBottom = Math.max(maxNodeBottom, node.y + node.height);
+  }
+  const height = maxNodeBottom + PADDING;
 
   return {
     nodes,
