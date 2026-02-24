@@ -130,22 +130,3 @@
   border-radius: 1px;
   transition: width 300ms ease-out;
 }
-
-/*
- * ═══════════════════════════════════════════════════════════════════════════
- * SCHEMA DESIGNER STYLES
- * ═══════════════════════════════════════════════════════════════════════════
- */
-
-/*
- * Drop zone pulse animation for the SmartTableCreator drag-and-drop area.
- * Active when a file is being dragged over the zone.
- */
-.bilko-drop-zone-active {
-  animation: bilko-drop-pulse 1s ease-in-out infinite;
-}
-
-@keyframes bilko-drop-pulse {
-  0%, 100% { border-color: rgba(168, 85, 247, 0.4); }
-  50% { border-color: rgba(168, 85, 247, 0.8); }
-}
