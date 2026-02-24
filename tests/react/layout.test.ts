@@ -132,4 +132,43 @@ describe('computeLayout', () => {
     expect(edge.toX).toBe(toNode.x);
     expect(edge.toY).toBe(toNode.y + toNode.height / 2);
   });
+
+  it('centers children vertically around their parent', () => {
+    // Fan-out: one parent with two children
+    const steps = [
+      makeStep('a'),
+      makeStep('b1', ['a']),
+      makeStep('b2', ['a']),
+    ];
+    const layout = computeLayout(steps);
+
+    const parent = layout.nodes.get('a')!;
+    const child1 = layout.nodes.get('b1')!;
+    const child2 = layout.nodes.get('b2')!;
+
+    // Children's vertical midpoint should equal the parent's vertical center
+    const parentCenterY = parent.y + parent.height / 2;
+    const childrenMidY = (child1.y + child1.height / 2 + child2.y + child2.height / 2) / 2;
+    expect(childrenMidY).toBe(parentCenterY);
+  });
+
+  it('centers diamond join node between its parents', () => {
+    // Diamond: a → b, c; b, c → d
+    const steps = [
+      makeStep('a'),
+      makeStep('b', ['a']),
+      makeStep('c', ['a']),
+      makeStep('d', ['b', 'c']),
+    ];
+    const layout = computeLayout(steps);
+
+    const b = layout.nodes.get('b')!;
+    const c = layout.nodes.get('c')!;
+    const d = layout.nodes.get('d')!;
+
+    // d should be centered between b and c
+    const parentsMidY = (b.y + b.height / 2 + c.y + c.height / 2) / 2;
+    const dCenterY = d.y + d.height / 2;
+    expect(dCenterY).toBe(parentsMidY);
+  });
 });
