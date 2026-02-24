@@ -265,16 +265,6 @@ export {
 } from './flow-progress-shared';
 export type { ResolvedStepMeta } from './flow-progress-shared';
 
-// Schema Designer
-export { SchemaDesigner } from './schema-designer';
-
-// Table Parser (LLM integration utilities)
-export {
-  TABLE_PARSE_SYSTEM_PROMPT,
-  validateTableDefinition,
-  createTableParser,
-} from './table-parser';
-
 // Types
 export type {
   UIStepType,
@@ -299,9 +289,4 @@ export type {
   ParallelConfig,
   PipelineConfig,
   AutoModeConfig,
-  ColumnDefinition,
-  TableDefinition,
-  SchemaDefinition,
-  SchemaDesignerProps,
-  SmartTableCreatorProps,
 } from './types';
